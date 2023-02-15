@@ -7,9 +7,10 @@ Handoff is a library that allows you to bootstrap a server that runs scheduled a
 - [x] Start test runs via POST requests
 - [x] Write test suites with multiple tests written in Go
 - [x] Skip tests
+- [x] Scheduled / recurring test runs (e.g. soak tests)
 - [ ] Execute test subsets via filters
 - [ ] Export prometheus test metrics
-- [ ] Scheduled / recurring test runs (e.g. soak tests)
+- [ ] Test run retention policy
 - [ ] Webui that shows test runs
 - [ ] k8s CRDs to configure test runs
 - [ ] output go test json report

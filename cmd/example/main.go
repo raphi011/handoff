@@ -8,16 +8,19 @@ import (
 )
 
 func main() {
-	s := handoff.New(handoff.WithTestSuite(handoff.TestSuite{
-		Name: "my-app",
-		Tests: map[string]handoff.TestFunc{
-			"TestSleep":   TestSleep,
-			"TestSuccess": TestSuccess,
-			"TestPanic":   TestPanic,
-			"TestSkip":    TestSkip,
-			"TestFatal":   TestFatal,
-		},
-	}))
+	s := handoff.New(
+		handoff.WithTestSuite(handoff.TestSuite{
+			Name: "my-app",
+			Tests: map[string]handoff.TestFunc{
+				"TestSleep":   TestSleep,
+				"TestSuccess": TestSuccess,
+				"TestPanic":   TestPanic,
+				"TestSkip":    TestSkip,
+				"TestFatal":   TestFatal,
+			},
+		}),
+		handoff.WithScheduledRun("my-app", "@every 5s"),
+	)
 
 	if err := s.Start(); err != nil {
 		log.Fatal(err)

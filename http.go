@@ -43,11 +43,10 @@ func (s *Server) StartTestSuiteRun(w http.ResponseWriter, r *http.Request, p htt
 		return
 	}
 
-	nextID := atomic.AddInt32(&s.currentRun, 1)
-
 	event := TestRunStarted{
-		TestRunIdentifier: TestRunIdentifier{runID: nextID, suiteName: suite.Name},
+		TestRunIdentifier: TestRunIdentifier{runID: s.nextID(), suiteName: suite.Name},
 		Scheduled:         time.Now(),
+		TriggeredBy:       "http",
 	}
 
 	s.events <- event
@@ -95,6 +94,10 @@ func (s *Server) getSuite(r *http.Request, p httprouter.Params) (TestSuite, erro
 	}
 
 	return ts, nil
+}
+
+func (s *Server) nextID() int32 {
+	return atomic.AddInt32(&s.currentRun, 1)
 }
 
 func (s *Server) getTestRun(r *http.Request, p httprouter.Params) (TestRun, error) {

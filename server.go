@@ -5,19 +5,32 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
 type Server struct {
 	port int
 
+	plugins Plugins
+
 	// immutable readonly map of testsuites
 	testSuites map[string]TestSuite
 	testRuns   sync.Map
+	schedules  []ScheduledRun
+	cron       *cron.Cron
 
 	// global runID counter, this should be per TestSuite in the future
 	currentRun int32
 
 	events chan Event
+}
+
+type Plugins struct {
+	pagerDuty PagerDutyPlugin
+	github    GithubPlugin
+	slack     SlackPlugin
+	logstash  LogstashPlugin
 }
 
 type Option func(s *Server)
@@ -38,9 +51,39 @@ func New(opts ...Option) *Server {
 }
 
 func (s *Server) Start() error {
+	if err := s.startSchedules(); err != nil {
+		return err
+	}
+
 	go s.eventLoop()
 
 	return s.runHTTP()
+}
+
+func (s *Server) startSchedules() error {
+	s.cron = cron.New(cron.WithSeconds())
+
+	for _, c := range s.schedules {
+		if _, ok := s.testSuites[c.TestSuiteName]; !ok {
+			return fmt.Errorf("test suite %s does not exist", c.TestSuiteName)
+		}
+
+		_, err := s.cron.AddFunc(c.Schedule, func() {
+			s.events <- TestRunStarted{
+				TestRunIdentifier: TestRunIdentifier{runID: s.nextID(), suiteName: c.TestSuiteName},
+				Scheduled:         time.Now(),
+				TriggeredBy:       "scheduled",
+			}
+		})
+
+		if err != nil {
+			return err
+		}
+	}
+
+	s.cron.Start()
+
+	return nil
 }
 
 // eventLoop loops over all events and updates the testRuns map accordingly.
@@ -67,12 +110,12 @@ func (s *Server) eventLoop() {
 		switch e := e.(type) {
 		case TestRunStarted:
 			ts := s.testSuites[e.suiteName]
-			go s.runTests(ts, e.runID)
+			go s.runTestSuite(ts, e.runID)
 		}
 	}
 }
 
-func (s *Server) runTests(suite TestSuite, runID int32) {
+func (s *Server) runTestSuite(suite TestSuite, runID int32) {
 	start := time.Now()
 
 	if suite.Setup != nil {
@@ -142,6 +185,12 @@ func (s *Server) executeTest(suite TestSuite, runID int32, name string, test Tes
 func WithTestSuite(suite TestSuite) Option {
 	return func(s *Server) {
 		s.testSuites[suite.Name] = suite
+	}
+}
+
+func WithScheduledRun(name, schedule string) Option {
+	return func(s *Server) {
+		s.schedules = append(s.schedules, ScheduledRun{TestSuiteName: name, Schedule: schedule})
 	}
 }
 

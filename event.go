@@ -26,7 +26,8 @@ func (e TestRunIdentifier) RunID() int32 {
 
 type TestRunStarted struct {
 	TestRunIdentifier
-	Scheduled time.Time
+	Scheduled   time.Time
+	TriggeredBy string
 }
 
 func (e TestRunStarted) Apply(ts TestRun) TestRun {
