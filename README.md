@@ -20,7 +20,7 @@ See [the example app](./cmd/example/main.go).
 - [ ] k8s CRDs to configure test runs
 - [ ] output go test json report
 - [ ] Websocket that returns realtime test results (including test logs)
-- Integrations:
+- Plugins
   - [ ] Pagerduty - failed e2e tests can triger alerts / incidents
   - [ ] Slacks - send messages to slack channels when tests pass / fail
   - [ ] Github - pr status checks
