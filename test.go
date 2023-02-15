@@ -2,14 +2,25 @@ package handoff
 
 import (
 	"fmt"
+	"time"
 )
 
+// skipTestErr is passed to panic() to signal
+// that a test was skipped.
+type skipTestErr struct{}
+
+// failTestErr is passed to panic() to signal
+// that a test has failed.
+type failTestErr struct{}
+
 type T struct {
-	name   string
-	logs   []string
-	passed bool
+	name    string
+	logs    []string
+	passed  bool
+	skipped bool
 }
 
+// TB is a carbon copy of the stdlib testing.TB interface
 type TB interface {
 	Cleanup(func())
 	Error(args ...any)
@@ -34,24 +45,46 @@ type TB interface {
 type TestFunc func(t TB)
 
 type TestSuite struct {
-	Name  string `json:"name"`
-	Tests map[string]TestFunc
+	Name     string `json:"name"`
+	Setup    func() error
+	Teardown func() error
+	Tests    map[string]TestFunc
 }
 
+type Result string
+
+const (
+	ResultSkipped     Result = "skipped"
+	ResultPassed      Result = "passed"
+	ResultFailed      Result = "failed"
+	ResultSetupFailed Result = "setup-failed"
+)
+
 type TestRun struct {
-	ID         int32           `json:"id"`
-	SuiteName  string          `json:"suiteName"`
-	Results    []TestRunResult `json:"results"`
-	TestFilter string          `json:"testFilter"`
-	Tests      int             `json:"tests"`
-	Passed     int             `json:"passed"`
-	Failed     int             `json:"failed"`
+	ID           int32           `json:"id"`
+	SuiteName    string          `json:"suiteName"`
+	TestResults  []TestRunResult `json:"testResults"`
+	Result       Result          `json:"result"`
+	TestFilter   string          `json:"testFilter"`
+	Tests        int             `json:"tests"`
+	Passed       int             `json:"passed"`
+	Skipped      int             `json:"skipped"`
+	Failed       int             `json:"failed"`
+	Scheduled    time.Time       `json:"scheduled"`
+	Start        time.Time       `json:"start"`
+	End          time.Time       `json:"end"`
+	DurationInMS int64           `json:"durationInMs"`
+	SetupLogs    []string        `json:"setupLogs"`
 }
 
 type TestRunResult struct {
-	Name   string   `json:"name"`
-	Passed bool     `json:"passed"`
-	Logs   []string `json:"logs"`
+	Name         string    `json:"name"`
+	Passed       bool      `json:"passed"`
+	Skipped      bool      `json:"skipped"`
+	Logs         []string  `json:"logs"`
+	Start        time.Time `json:"start"`
+	End          time.Time `json:"end"`
+	DurationInMS int64     `json:"durationInMs"`
 }
 
 type Test struct {
@@ -78,7 +111,7 @@ func (t *T) Fail() {
 
 func (t *T) FailNow() {
 	t.passed = false
-	panic("FailNow")
+	panic(failTestErr{})
 }
 
 func (t *T) Failed() bool {
@@ -87,12 +120,12 @@ func (t *T) Failed() bool {
 
 func (t *T) Fatal(args ...any) {
 	t.Error(args...)
-	panic("Fatal")
+	panic(failTestErr{})
 }
 
 func (t *T) Fatalf(format string, args ...any) {
 	t.Errorf(format, args...)
-	panic("Fatalf")
+	panic(failTestErr{})
 }
 
 func (t *T) Helper() {}
@@ -110,23 +143,25 @@ func (t *T) Name() string {
 }
 
 func (t *T) Setenv(key, value string) {
-
 }
 
 func (t *T) Skip(args ...any) {
-
+	t.Log(args...)
+	t.SkipNow()
 }
 
 func (t *T) SkipNow() {
-
+	t.skipped = true
+	panic(skipTestErr{})
 }
 
 func (t *T) Skipf(format string, args ...any) {
-
+	t.Logf(format, args...)
+	t.SkipNow()
 }
 
 func (t *T) Skipped() bool {
-	return false
+	return t.skipped
 }
 
 func (t *T) TempDir() string {

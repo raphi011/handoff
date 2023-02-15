@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 )
 
 type Server struct {
@@ -13,7 +14,7 @@ type Server struct {
 	testSuites map[string]TestSuite
 	testRuns   sync.Map
 
-	// global runID counter, this should be per TestSuite later
+	// global runID counter, this should be per TestSuite in the future
 	currentRun int32
 
 	events chan Event
@@ -42,6 +43,9 @@ func (s *Server) Start() error {
 	return s.runHTTP()
 }
 
+// eventLoop loops over all events and updates the testRuns map accordingly.
+// It should be started as a goroutine once. The `testRuns` map must only be
+// written to from here.
 func (s *Server) eventLoop() {
 	for e := range s.events {
 		key := testRunKey(e.SuiteName(), e.RunID())
@@ -69,12 +73,43 @@ func (s *Server) eventLoop() {
 }
 
 func (s *Server) runTests(suite TestSuite, runID int32) {
+	start := time.Now()
+
+	if suite.Setup != nil {
+		if err := suite.Setup(); err != nil {
+			log.Printf("setup of suite %s failed: %v\n", suite.Name, err)
+
+			s.events <- TestRunSetupFailed{
+				TestRunIdentifier: TestRunIdentifier{
+					runID:     runID,
+					suiteName: suite.Name,
+				},
+				start: start, end: time.Now(), err: err}
+			return
+		}
+	}
+
 	for name, test := range suite.Tests {
 		s.executeTest(suite, runID, name, test)
 	}
+
+	if suite.Teardown != nil {
+		if err := suite.Teardown(); err != nil {
+			log.Printf("teardown of suite %s failed: %v\n", suite.Name, err)
+		}
+	}
+
+	s.events <- TestRunFinished{
+		TestRunIdentifier: TestRunIdentifier{
+			runID:     runID,
+			suiteName: suite.Name,
+		},
+		start: start, end: time.Now()}
 }
 
 func (s *Server) executeTest(suite TestSuite, runID int32, name string, test TestFunc) {
+	start := time.Now()
+
 	t := T{
 		name:   name,
 		logs:   []string{},
@@ -82,6 +117,8 @@ func (s *Server) executeTest(suite TestSuite, runID int32, name string, test Tes
 	}
 
 	defer func() {
+		end := time.Now()
+
 		err := recover()
 
 		s.events <- TestFinished{
@@ -92,7 +129,10 @@ func (s *Server) executeTest(suite TestSuite, runID int32, name string, test Tes
 			testName: name,
 			recovery: err,
 			passed:   t.passed,
+			skipped:  t.skipped,
 			logs:     t.logs,
+			start:    start,
+			end:      end,
 		}
 	}()
 

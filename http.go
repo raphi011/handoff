@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync/atomic"
+	"time"
 
 	"github.com/julienschmidt/httprouter"
 )
@@ -35,21 +36,6 @@ func (s *Server) runHTTP() error {
 	return http.ListenAndServe("localhost:"+strconv.Itoa(s.port), router)
 }
 
-func (s *Server) httpError(w http.ResponseWriter, err error) {
-	var notFound NotFoundError
-	var malformedRequest MalformedRequestError
-
-	if errors.As(err, &notFound) {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	} else if errors.As(err, &malformedRequest) {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	w.WriteHeader(http.StatusInternalServerError)
-}
-
 func (s *Server) StartTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	suite, err := s.getSuite(r, p)
 	if err != nil {
@@ -59,7 +45,10 @@ func (s *Server) StartTestSuiteRun(w http.ResponseWriter, r *http.Request, p htt
 
 	nextID := atomic.AddInt32(&s.currentRun, 1)
 
-	event := TestRunStarted{TestRunIdentifier: TestRunIdentifier{runID: nextID, suiteName: suite.Name}}
+	event := TestRunStarted{
+		TestRunIdentifier: TestRunIdentifier{runID: nextID, suiteName: suite.Name},
+		Scheduled:         time.Now(),
+	}
 
 	s.events <- event
 
@@ -74,6 +63,8 @@ func (s *Server) StartTestSuiteRun(w http.ResponseWriter, r *http.Request, p htt
 	if _, err = w.Write(body); err != nil {
 		log.Printf("error writing body: %v", err)
 	}
+
+	w.WriteHeader(http.StatusCreated)
 }
 
 func (s *Server) GetTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -119,4 +110,19 @@ func (s *Server) getTestRun(r *http.Request, p httprouter.Params) (TestRun, erro
 	}
 
 	return tr.(TestRun), nil
+}
+
+func (s *Server) httpError(w http.ResponseWriter, err error) {
+	var notFound NotFoundError
+	var malformedRequest MalformedRequestError
+
+	if errors.As(err, &notFound) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	} else if errors.As(err, &malformedRequest) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusInternalServerError)
 }
