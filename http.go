@@ -18,6 +18,14 @@ func (e NotFoundError) Error() string {
 	return "not found"
 }
 
+type MalformedRequestError struct {
+	param string
+}
+
+func (e MalformedRequestError) Error() string {
+	return "malformed request param: " + e.param
+}
+
 func (s *Server) runHTTP() error {
 	router := httprouter.New()
 
@@ -29,9 +37,13 @@ func (s *Server) runHTTP() error {
 
 func (s *Server) httpError(w http.ResponseWriter, err error) {
 	var notFound NotFoundError
+	var malformedRequest MalformedRequestError
 
 	if errors.As(err, &notFound) {
 		w.WriteHeader(http.StatusNotFound)
+		return
+	} else if errors.As(err, &malformedRequest) {
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
@@ -96,9 +108,12 @@ func (s *Server) getSuite(r *http.Request, p httprouter.Params) (TestSuite, erro
 
 func (s *Server) getTestRun(r *http.Request, p httprouter.Params) (TestRun, error) {
 	suiteName := p.ByName("suite-name")
-	runID := p.ByName("run-id")
+	runID, err := strconv.Atoi(p.ByName("run-id"))
+	if err != nil {
+		return TestRun{}, MalformedRequestError{param: "run-id"}
+	}
 
-	tr, ok := s.testRuns.Load(suiteName + "-" + runID)
+	tr, ok := s.testRuns.Load(testRunKey(suiteName, int32(runID)))
 	if !ok {
 		return TestRun{}, NotFoundError{}
 	}
