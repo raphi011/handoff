@@ -15,10 +15,11 @@ type skipTestErr struct{}
 type failTestErr struct{}
 
 type T struct {
-	name    string
-	logs    []string
-	passed  bool
-	skipped bool
+	name       string
+	logs       []string
+	passed     bool
+	skipped    bool
+	runContext map[string]any `json:"runContext"`
 }
 
 // TB is a carbon copy of the stdlib testing.TB interface
@@ -117,9 +118,9 @@ type TestRunResult struct {
 	End time.Time `json:"end"`
 	// DurationInMS is the duration of the test run in milliseconds (end-start).
 	DurationInMS int64 `json:"durationInMs"`
-	// CustomData is data that can be set by the test. This can be used
+	// RunContext is data that can be set by the test. This can be used
 	// to add additional context to the test run, e.g. correlation ids.
-	CustomData map[string]any `json:"customData"`
+	RunContext map[string]any `json:"runContext"`
 }
 
 type Test struct {
@@ -201,4 +202,18 @@ func (t *T) Skipped() bool {
 
 func (t *T) TempDir() string {
 	return ""
+}
+
+func (t *T) SetContext(key string, value any) {
+	t.runContext[key] = value
+}
+
+func (t *T) Result() Result {
+	if t.skipped {
+		return ResultSkipped
+	} else if t.passed {
+		return ResultPassed
+	}
+
+	return ResultFailed
 }

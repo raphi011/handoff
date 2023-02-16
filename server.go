@@ -12,8 +12,7 @@ import (
 type Server struct {
 	port int
 
-	plugins Plugins
-
+	plugins plugins
 	// immutable readonly map of testsuites
 	testSuites map[string]TestSuite
 	testRuns   sync.Map
@@ -26,11 +25,12 @@ type Server struct {
 	events chan Event
 }
 
-type Plugins struct {
-	pagerDuty PagerDutyPlugin
-	github    GithubPlugin
-	slack     SlackPlugin
-	logstash  LogstashPlugin
+type plugins struct {
+	all               []Plugin
+	testStarted       []TestStartedListener
+	testFinished      []TestFinishedListener
+	testSuiteFinished []TestSuiteFinishedListener
+	testSuiteStarted  []TestSuiteStartedListener
 }
 
 type Option func(s *Server)
@@ -39,8 +39,15 @@ func New(opts ...Option) *Server {
 	s := &Server{
 		port:       1337,
 		testSuites: map[string]TestSuite{},
-		testRuns:   sync.Map{},
-		events:     make(chan Event, 100),
+		plugins: plugins{
+			all:               []Plugin{},
+			testStarted:       []TestStartedListener{},
+			testFinished:      []TestFinishedListener{},
+			testSuiteFinished: []TestSuiteFinishedListener{},
+			testSuiteStarted:  []TestSuiteStartedListener{},
+		},
+		testRuns: sync.Map{},
+		events:   make(chan Event, 100),
 	}
 
 	for _, o := range opts {
@@ -51,6 +58,9 @@ func New(opts ...Option) *Server {
 }
 
 func (s *Server) Start() error {
+	if err := s.initPlugins(); err != nil {
+		return err
+	}
 	if err := s.startSchedules(); err != nil {
 		return err
 	}
@@ -58,6 +68,39 @@ func (s *Server) Start() error {
 	go s.eventLoop()
 
 	return s.runHTTP()
+}
+
+func (s *Server) initPlugins() error {
+	for _, p := range s.plugins.all {
+		if err := p.Init(); err != nil {
+			return err
+		}
+
+		registeredHook := false
+
+		if l, ok := p.(TestStartedListener); ok {
+			s.plugins.testStarted = append(s.plugins.testStarted, l)
+			registeredHook = true
+		}
+		if l, ok := p.(TestFinishedListener); ok {
+			s.plugins.testFinished = append(s.plugins.testFinished, l)
+			registeredHook = true
+		}
+		if l, ok := p.(TestSuiteStartedListener); ok {
+			s.plugins.testSuiteStarted = append(s.plugins.testSuiteStarted, l)
+			registeredHook = true
+		}
+		if l, ok := p.(TestSuiteFinishedListener); ok {
+			s.plugins.testSuiteFinished = append(s.plugins.testSuiteFinished, l)
+			registeredHook = true
+		}
+
+		if !registeredHook {
+			return fmt.Errorf("plugin %s does not implement any hook", p.Name())
+		}
+	}
+
+	return nil
 }
 
 func (s *Server) startSchedules() error {
@@ -72,7 +115,7 @@ func (s *Server) startSchedules() error {
 		}
 
 		entryID, err := s.cron.AddFunc(schedule.Schedule, func() {
-			s.events <- TestRunStarted{
+			s.events <- TestRunStartedEvent{
 				TestRunIdentifier: TestRunIdentifier{runID: s.nextID(), suiteName: schedule.TestSuiteName},
 				Scheduled:         time.Now(),
 				TriggeredBy:       "scheduled",
@@ -101,7 +144,7 @@ func (s *Server) eventLoop() {
 
 		testRun := TestRun{}
 
-		if _, ok := e.(TestRunStarted); !ok {
+		if _, ok := e.(TestRunStartedEvent); !ok {
 			val, found := s.testRuns.Load(key)
 			if !found {
 				log.Printf("could not handle event, run %s not found\n", key)
@@ -116,7 +159,7 @@ func (s *Server) eventLoop() {
 		s.testRuns.Store(key, testRun)
 
 		switch e := e.(type) {
-		case TestRunStarted:
+		case TestRunStartedEvent:
 			ts := s.testSuites[e.suiteName]
 			go s.runTestSuite(ts, testRun)
 		}
@@ -138,7 +181,7 @@ func (s *Server) runTestSuite(suite TestSuite, testRun TestRun) {
 		if err := suite.Setup(); err != nil {
 			log.Printf("setup of suite %s failed: %v\n", suite.Name, err)
 
-			s.events <- TestRunSetupFailed{
+			s.events <- TestRunSetupFailedEvent{
 				TestRunIdentifier: TestRunIdentifier{
 					runID:     testRun.ID,
 					suiteName: suite.Name,
@@ -157,7 +200,7 @@ func (s *Server) runTestSuite(suite TestSuite, testRun TestRun) {
 			skipped++
 			continue
 		}
-		s.executeTest(suite, testRun.ID, name, test)
+		s.executeTest(suite, testRun, name, test)
 	}
 
 	if suite.Teardown != nil {
@@ -166,7 +209,7 @@ func (s *Server) runTestSuite(suite TestSuite, testRun TestRun) {
 		}
 	}
 
-	s.events <- TestRunFinished{
+	s.events <- TestRunFinishedEvent{
 		TestRunIdentifier: TestRunIdentifier{
 			runID:     testRun.ID,
 			suiteName: suite.Name,
@@ -177,23 +220,28 @@ func (s *Server) runTestSuite(suite TestSuite, testRun TestRun) {
 	}
 }
 
-func (s *Server) executeTest(suite TestSuite, runID int32, name string, test TestFunc) {
+func (s *Server) executeTest(suite TestSuite, testRun TestRun, name string, test TestFunc) {
 	start := time.Now()
 
 	t := T{
-		name:   name,
-		logs:   []string{},
-		passed: true,
+		name:       name,
+		logs:       []string{},
+		passed:     true,
+		runContext: map[string]any{},
 	}
+
+	s.notifyTestStarted(suite, testRun, name)
 
 	defer func() {
 		end := time.Now()
 
 		err := recover()
 
-		s.events <- TestFinished{
+		testRunsMetric.WithLabelValues(suite.AssociatedService, suite.Name, string(t.Result()))
+
+		s.events <- TestFinishedEvent{
 			TestRunIdentifier: TestRunIdentifier{
-				runID:     runID,
+				runID:     testRun.ID,
 				suiteName: suite.Name,
 			},
 			testName: name,
@@ -204,9 +252,29 @@ func (s *Server) executeTest(suite TestSuite, runID int32, name string, test Tes
 			start:    start,
 			end:      end,
 		}
+
+		s.notifyTestFinished(suite, testRun, name, t.runContext)
 	}()
 
 	test(&t)
+}
+
+func (s *Server) notifyTestStarted(suite TestSuite, testRun TestRun, name string) {
+	for _, p := range s.plugins.testStarted {
+		p.TestStarted(suite, testRun, name)
+	}
+}
+
+func (s *Server) notifyTestFinished(suite TestSuite, testRun TestRun, name string, runContext map[string]any) {
+	for _, p := range s.plugins.testFinished {
+		p.TestFinished(suite, testRun, name, runContext)
+	}
+}
+
+func WithPlugin(p Plugin) Option {
+	return func(s *Server) {
+		s.plugins.all = append(s.plugins.all, p)
+	}
 }
 
 func WithTestSuite(suite TestSuite) Option {

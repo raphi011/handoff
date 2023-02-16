@@ -25,7 +25,7 @@ func (e TestRunIdentifier) RunID() int32 {
 	return e.runID
 }
 
-type TestRunStarted struct {
+type TestRunStartedEvent struct {
 	TestRunIdentifier
 	Scheduled   time.Time
 	TriggeredBy string
@@ -33,7 +33,7 @@ type TestRunStarted struct {
 	Tests       int
 }
 
-func (e TestRunStarted) Apply(ts TestRun) TestRun {
+func (e TestRunStartedEvent) Apply(ts TestRun) TestRun {
 	ts.ID = e.runID
 	ts.SuiteName = e.suiteName
 	ts.TestResults = []TestRunResult{}
@@ -49,7 +49,7 @@ func (e TestRunStarted) Apply(ts TestRun) TestRun {
 	return ts
 }
 
-type TestRunFinished struct {
+type TestRunFinishedEvent struct {
 	TestRunIdentifier
 	start time.Time
 	end   time.Time
@@ -57,7 +57,7 @@ type TestRunFinished struct {
 	skipped int
 }
 
-func (e TestRunFinished) Apply(ts TestRun) TestRun {
+func (e TestRunFinishedEvent) Apply(ts TestRun) TestRun {
 	ts.Start = e.start
 	ts.End = e.end
 	ts.DurationInMS = e.end.Sub(e.start).Milliseconds()
@@ -75,14 +75,14 @@ func (e TestRunFinished) Apply(ts TestRun) TestRun {
 	return ts
 }
 
-type TestRunSetupFailed struct {
+type TestRunSetupFailedEvent struct {
 	TestRunIdentifier
 	start time.Time
 	end   time.Time
 	err   error
 }
 
-func (e TestRunSetupFailed) Apply(ts TestRun) TestRun {
+func (e TestRunSetupFailedEvent) Apply(ts TestRun) TestRun {
 	ts.Result = ResultSetupFailed
 	ts.Start = e.start
 	ts.End = e.end
@@ -91,7 +91,7 @@ func (e TestRunSetupFailed) Apply(ts TestRun) TestRun {
 	return ts
 }
 
-type TestFinished struct {
+type TestFinishedEvent struct {
 	TestRunIdentifier
 	start    time.Time
 	end      time.Time
@@ -102,7 +102,7 @@ type TestFinished struct {
 	logs     []string
 }
 
-func (e TestFinished) Apply(ts TestRun) TestRun {
+func (e TestFinishedEvent) Apply(ts TestRun) TestRun {
 	passed := e.passed
 	logs := e.logs
 

@@ -14,5 +14,10 @@ var (
 	testSuitesRunMetric = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "handoff_testsuites_run_total",
 		Help: "The number of test suites run since the service was started",
-	}, []string{"associated_service", "suite_name"})
+	}, []string{"associated_service", "suite_name", "result"})
+
+	testRunsMetric = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "handoff_tests_run_total",
+		Help: "The number of tests run since the service was started",
+	}, []string{"associated_service", "suite_name", "result"})
 )

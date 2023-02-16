@@ -57,7 +57,7 @@ func (s *Server) StartTestSuiteRun(w http.ResponseWriter, r *http.Request, p htt
 		}
 	}
 
-	event := TestRunStarted{
+	event := TestRunStartedEvent{
 		TestRunIdentifier: TestRunIdentifier{runID: s.nextID(), suiteName: suite.Name},
 		Scheduled:         time.Now(),
 		TriggeredBy:       "http",

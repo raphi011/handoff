@@ -1,5 +1,27 @@
 package handoff
 
+type Plugin interface {
+	Name() string
+	Init() error
+	Stop() error
+}
+
+type TestStartedListener interface {
+	TestStarted(suite TestSuite, run TestRun, testName string)
+}
+
+type TestFinishedListener interface {
+	TestFinished(suite TestSuite, run TestRun, testName string, context map[string]any)
+}
+
+type TestSuiteStartedListener interface {
+	TestSuiteStarted()
+}
+
+type TestSuiteFinishedListener interface {
+	TestSuiteFinished()
+}
+
 // PagerDutyPlugin supports creating and resolving incidents when
 // testsuites fail.
 type PagerDutyPlugin struct {
