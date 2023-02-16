@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type NotFoundError struct {
@@ -30,6 +31,8 @@ func (e MalformedRequestError) Error() string {
 
 func (s *Server) runHTTP() error {
 	router := httprouter.New()
+
+	router.Handler("GET", "/metrics", promhttp.Handler())
 
 	router.POST("/suite/:suite-name/run", s.StartTestSuiteRun)
 	router.GET("/suite/:suite-name/run/:run-id", s.GetTestSuiteRun)

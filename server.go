@@ -126,6 +126,14 @@ func (s *Server) eventLoop() {
 func (s *Server) runTestSuite(suite TestSuite, testRun TestRun) {
 	start := time.Now()
 
+	testSuitesRunMetric.WithLabelValues(suite.AssociatedService, suite.Name).Inc()
+	testSuitesRunning := testSuitesRunningMetric.WithLabelValues(suite.AssociatedService, suite.Name)
+
+	testSuitesRunning.Inc()
+	defer func() {
+		testSuitesRunning.Dec()
+	}()
+
 	if suite.Setup != nil {
 		if err := suite.Setup(); err != nil {
 			log.Printf("setup of suite %s failed: %v\n", suite.Name, err)

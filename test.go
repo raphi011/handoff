@@ -48,10 +48,14 @@ type TestFunc func(t TB)
 // TestSuite is a static definition of a testsuite and contains
 // Setup, Teardown and a collection of Test functions.
 type TestSuite struct {
-	Name     string `json:"name"`
-	Setup    func() error
-	Teardown func() error
-	Tests    map[string]TestFunc
+	// Name of the testsuite
+	Name string `json:"name"`
+	// AssociatedService can optionally contain the name of the service
+	// that this testsuite is associated with. This will be used for metric labels.
+	AssociatedService string `json:"associatedService"`
+	Setup             func() error
+	Teardown          func() error
+	Tests             map[string]TestFunc
 }
 
 type Result string
@@ -100,16 +104,22 @@ type TestRun struct {
 }
 
 type TestRunResult struct {
-	Name    string    `json:"name"`
-	Passed  bool      `json:"passed"`
-	Skipped bool      `json:"skipped"`
-	Logs    []string  `json:"logs"`
-	Start   time.Time `json:"start"`
-	End     time.Time `json:"end"`
+	Name string `json:"name"`
+	// Passed denotes if the test has passed.
+	Passed bool `json:"passed"`
+	// Skipped denotes if the test was skipped (e.g. by calling t.Skip()).
+	Skipped bool `json:"skipped"`
+	// Logs contains log messages written by the test itself.
+	Logs []string `json:"logs"`
+	// Start marks the start time of the test run.
+	Start time.Time `json:"start"`
+	// End marks the end time of the test run.
+	End time.Time `json:"end"`
+	// DurationInMS is the duration of the test run in milliseconds (end-start).
+	DurationInMS int64 `json:"durationInMs"`
 	// CustomData is data that can be set by the test. This can be used
 	// to add additional context to the test run, e.g. correlation ids.
-	CustomData   map[string]any `json:"customData"`
-	DurationInMS int64          `json:"durationInMs"`
+	CustomData map[string]any `json:"customData"`
 }
 
 type Test struct {

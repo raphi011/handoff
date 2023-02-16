@@ -2,7 +2,6 @@
 
 Handoff is a library that allows you to bootstrap a server that runs scheduled and triggered e2e tests written in Go.
 
-
 ## Example
 
 See [the example app](./cmd/example/main.go).
@@ -15,11 +14,12 @@ See [the example app](./cmd/example/main.go).
 - [x] Scheduled / recurring test runs (e.g. soak tests)
 - [x] Execute test subsets via filters
 - [x] Support existing assertion libraries like stretch/testify
-- [ ] Export prometheus test metrics
-- [ ] Test run retention policy
-- [ ] Webui that shows test runs
-- [ ] k8s CRDs to configure test runs
-- [ ] output go test json report
+- [x] Export prometheus test metrics
+- [ ] Configurable test run retention policy
+- [ ] Webui that shows test run results
+- [ ] Use go:generate to generate go tests from handoff tests to execute with standard go tooling
+- [ ] k8s operator / CRDs to configure test runs & schedules
+- [ ] Output go test json report
 - [ ] Websocket that returns realtime test results (including test logs)
 - Plugins
   - [ ] Pagerduty - failed e2e tests can triger alerts / incidents
