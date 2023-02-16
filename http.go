@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -43,10 +44,22 @@ func (s *Server) StartTestSuiteRun(w http.ResponseWriter, r *http.Request, p htt
 		return
 	}
 
+	var filter *regexp.Regexp
+
+	if filterParam := r.URL.Query().Get("filter"); filterParam != "" {
+		filter, err = regexp.Compile(filterParam)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+	}
+
 	event := TestRunStarted{
 		TestRunIdentifier: TestRunIdentifier{runID: s.nextID(), suiteName: suite.Name},
 		Scheduled:         time.Now(),
 		TriggeredBy:       "http",
+		TestFilter:        filter,
+		Tests:             len(suite.Tests),
 	}
 
 	s.events <- event

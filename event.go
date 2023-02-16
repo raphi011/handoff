@@ -2,6 +2,7 @@ package handoff
 
 import (
 	"fmt"
+	"regexp"
 	"time"
 )
 
@@ -28,6 +29,8 @@ type TestRunStarted struct {
 	TestRunIdentifier
 	Scheduled   time.Time
 	TriggeredBy string
+	TestFilter  *regexp.Regexp
+	Tests       int
 }
 
 func (e TestRunStarted) Apply(ts TestRun) TestRun {
@@ -36,6 +39,12 @@ func (e TestRunStarted) Apply(ts TestRun) TestRun {
 	ts.TestResults = []TestRunResult{}
 	ts.Scheduled = e.Scheduled
 	ts.SetupLogs = []string{}
+	ts.testFilterRegex = e.TestFilter
+	ts.Tests = e.Tests
+
+	if e.TestFilter != nil {
+		ts.TestFilter = e.TestFilter.String()
+	}
 
 	return ts
 }
@@ -44,12 +53,16 @@ type TestRunFinished struct {
 	TestRunIdentifier
 	start time.Time
 	end   time.Time
+	// skipped is the # of tests skipped by the run TestFilter
+	skipped int
 }
 
 func (e TestRunFinished) Apply(ts TestRun) TestRun {
 	ts.Start = e.start
 	ts.End = e.end
 	ts.DurationInMS = e.end.Sub(e.start).Milliseconds()
+	// add to skipped because each test can also call t.Skip()
+	ts.Skipped += e.skipped
 
 	result := ResultPassed
 
@@ -110,8 +123,6 @@ func (e TestFinished) Apply(ts TestRun) TestRun {
 	} else {
 		ts.Failed++
 	}
-
-	ts.Tests++
 
 	ts.TestResults = append(ts.TestResults, TestRunResult{
 		Name:         e.testName,

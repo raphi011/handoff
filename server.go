@@ -66,7 +66,8 @@ func (s *Server) startSchedules() error {
 	for i := range s.schedules {
 		schedule := s.schedules[i]
 
-		if _, ok := s.testSuites[schedule.TestSuiteName]; !ok {
+		ts, ok := s.testSuites[schedule.TestSuiteName]
+		if !ok {
 			return fmt.Errorf("test suite %s does not exist", schedule.TestSuiteName)
 		}
 
@@ -75,6 +76,7 @@ func (s *Server) startSchedules() error {
 				TestRunIdentifier: TestRunIdentifier{runID: s.nextID(), suiteName: schedule.TestSuiteName},
 				Scheduled:         time.Now(),
 				TriggeredBy:       "scheduled",
+				Tests:             len(ts.Tests),
 			}
 		})
 
@@ -109,17 +111,19 @@ func (s *Server) eventLoop() {
 			testRun = val.(TestRun)
 		}
 
-		s.testRuns.Store(key, e.Apply(testRun))
+		testRun = e.Apply(testRun)
+
+		s.testRuns.Store(key, testRun)
 
 		switch e := e.(type) {
 		case TestRunStarted:
 			ts := s.testSuites[e.suiteName]
-			go s.runTestSuite(ts, e.runID)
+			go s.runTestSuite(ts, testRun)
 		}
 	}
 }
 
-func (s *Server) runTestSuite(suite TestSuite, runID int32) {
+func (s *Server) runTestSuite(suite TestSuite, testRun TestRun) {
 	start := time.Now()
 
 	if suite.Setup != nil {
@@ -128,7 +132,7 @@ func (s *Server) runTestSuite(suite TestSuite, runID int32) {
 
 			s.events <- TestRunSetupFailed{
 				TestRunIdentifier: TestRunIdentifier{
-					runID:     runID,
+					runID:     testRun.ID,
 					suiteName: suite.Name,
 				},
 				start: start, end: time.Now(), err: err}
@@ -136,8 +140,16 @@ func (s *Server) runTestSuite(suite TestSuite, runID int32) {
 		}
 	}
 
+	skipped := 0
+
+	filter := testRun.testFilterRegex
+
 	for name, test := range suite.Tests {
-		s.executeTest(suite, runID, name, test)
+		if filter != nil && !filter.MatchString(name) {
+			skipped++
+			continue
+		}
+		s.executeTest(suite, testRun.ID, name, test)
 	}
 
 	if suite.Teardown != nil {
@@ -148,10 +160,13 @@ func (s *Server) runTestSuite(suite TestSuite, runID int32) {
 
 	s.events <- TestRunFinished{
 		TestRunIdentifier: TestRunIdentifier{
-			runID:     runID,
+			runID:     testRun.ID,
 			suiteName: suite.Name,
 		},
-		start: start, end: time.Now()}
+		start:   start,
+		end:     time.Now(),
+		skipped: skipped,
+	}
 }
 
 func (s *Server) executeTest(suite TestSuite, runID int32, name string, test TestFunc) {

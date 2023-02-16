@@ -13,7 +13,7 @@ See [the example app](./cmd/example/main.go).
 - [x] Write test suites with multiple tests written in Go
 - [x] Skip tests
 - [x] Scheduled / recurring test runs (e.g. soak tests)
-- [ ] Execute test subsets via filters
+- [x] Execute test subsets via filters
 - [ ] Export prometheus test metrics
 - [ ] Test run retention policy
 - [ ] Webui that shows test runs

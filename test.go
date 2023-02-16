@@ -2,6 +2,7 @@ package handoff
 
 import (
 	"fmt"
+	"regexp"
 	"time"
 )
 
@@ -73,7 +74,8 @@ type TestRun struct {
 	Result Result `json:"result"`
 	// TestFilter filters out a subset of the tests and skips the
 	// remaining ones (not implemented yet).
-	TestFilter string `json:"testFilter"`
+	TestFilter      string `json:"testFilter"`
+	testFilterRegex *regexp.Regexp
 	// Tests counts the total amount of tests in the suite.
 	Tests int `json:"tests"`
 	// Passed counts the number of passed tests.
