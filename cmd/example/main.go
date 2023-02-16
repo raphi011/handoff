@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/raphi011/handoff"
+	"github.com/stretchr/testify/assert"
 )
 
 func main() {
@@ -17,6 +18,7 @@ func main() {
 				"TestPanic":   TestPanic,
 				"TestSkip":    TestSkip,
 				"TestFatal":   TestFatal,
+				"TestTestify": TestTestify,
 			},
 		}),
 		handoff.WithScheduledRun("my-app", "@every 5s"),
@@ -45,4 +47,8 @@ func TestPanic(t handoff.TB) {
 
 func TestSkip(t handoff.TB) {
 	t.Skip("skipping test")
+}
+
+func TestTestify(t handoff.TB) {
+	assert.Equal(t, 1, 2)
 }

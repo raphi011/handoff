@@ -14,6 +14,7 @@ See [the example app](./cmd/example/main.go).
 - [x] Skip tests
 - [x] Scheduled / recurring test runs (e.g. soak tests)
 - [x] Execute test subsets via filters
+- [x] Support existing assertion libraries like stretch/testify
 - [ ] Export prometheus test metrics
 - [ ] Test run retention policy
 - [ ] Webui that shows test runs
