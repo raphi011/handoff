@@ -63,14 +63,16 @@ func (s *Server) Start() error {
 func (s *Server) startSchedules() error {
 	s.cron = cron.New(cron.WithSeconds())
 
-	for _, c := range s.schedules {
-		if _, ok := s.testSuites[c.TestSuiteName]; !ok {
-			return fmt.Errorf("test suite %s does not exist", c.TestSuiteName)
+	for i := range s.schedules {
+		schedule := s.schedules[i]
+
+		if _, ok := s.testSuites[schedule.TestSuiteName]; !ok {
+			return fmt.Errorf("test suite %s does not exist", schedule.TestSuiteName)
 		}
 
-		_, err := s.cron.AddFunc(c.Schedule, func() {
+		entryID, err := s.cron.AddFunc(schedule.Schedule, func() {
 			s.events <- TestRunStarted{
-				TestRunIdentifier: TestRunIdentifier{runID: s.nextID(), suiteName: c.TestSuiteName},
+				TestRunIdentifier: TestRunIdentifier{runID: s.nextID(), suiteName: schedule.TestSuiteName},
 				Scheduled:         time.Now(),
 				TriggeredBy:       "scheduled",
 			}
@@ -79,6 +81,8 @@ func (s *Server) startSchedules() error {
 		if err != nil {
 			return err
 		}
+
+		s.schedules[i].EntryID = entryID
 	}
 
 	s.cron.Start()
