@@ -15,6 +15,7 @@ See [the example app](./cmd/example/main.go).
 - [x] Skip test subsets via regex filters passed into a test run
 - [x] Support existing assertion libraries like stretch/testify
 - [x] Export prometheus test metrics
+- [x] Basic support for plugins to hook into the test lifecycle
 - [ ] Webui that shows test run results
 - [ ] Authenticated HTTP requests through TLS client certificates
 - [ ] Use go:generate to generate go tests from handoff tests to execute with standard go tooling
