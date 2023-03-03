@@ -18,6 +18,7 @@ See [the example app](./cmd/example/main.go).
 - [x] Basic support for plugins to hook into the test lifecycle
 - [ ] Webui that shows test run results
 - [ ] flaky test detection
+- [ ] image for [helm chart](https://helm.sh/docs/topics/chart_tests/) tests for automated helm release rollbacks
 - [ ] Authenticated HTTP requests through TLS client certificates
 - [ ] Use go:generate to generate go tests from handoff tests to execute with standard go tooling
 - [ ] k8s operator / CRDs to configure test runs & schedules
