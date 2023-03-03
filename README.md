@@ -17,6 +17,7 @@ See [the example app](./cmd/example/main.go).
 - [x] Export prometheus test metrics
 - [x] Basic support for plugins to hook into the test lifecycle
 - [ ] Webui that shows test run results
+- [ ] flaky test detection
 - [ ] Authenticated HTTP requests through TLS client certificates
 - [ ] Use go:generate to generate go tests from handoff tests to execute with standard go tooling
 - [ ] k8s operator / CRDs to configure test runs & schedules
