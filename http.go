@@ -1,8 +1,10 @@
 package handoff
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
+	"html/template"
 	"log"
 	"net/http"
 	"regexp"
@@ -13,6 +15,9 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+//go:embed testrun.tmpl
+var testRunTemplate string
 
 type NotFoundError struct {
 }
@@ -36,6 +41,10 @@ func (s *Server) runHTTP() error {
 
 	router.POST("/suite/:suite-name/run", s.StartTestSuiteRun)
 	router.GET("/suite/:suite-name/run/:run-id", s.GetTestSuiteRun)
+
+	router.GET("/", s.GetResults)
+
+	log.Printf("Running server at port %d\n", s.port)
 
 	return http.ListenAndServe("localhost:"+strconv.Itoa(s.port), router)
 }
@@ -80,6 +89,27 @@ func (s *Server) StartTestSuiteRun(w http.ResponseWriter, r *http.Request, p htt
 	}
 
 	w.WriteHeader(http.StatusCreated)
+}
+
+func (s *Server) GetResults(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	var testRun TestRun
+	s.testRuns.Range(func(key, value any) bool {
+		testRun = value.(TestRun)
+		return false
+	})
+
+	if testRun.SuiteName == "" {
+		w.Write([]byte("No testruns found"))
+		return
+	}
+
+	tmpl, err := template.New("results").Parse(testRunTemplate)
+	if err != nil {
+		s.httpError(w, err)
+		return
+	}
+
+	err = tmpl.Execute(w, testRun)
 }
 
 func (s *Server) GetTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {

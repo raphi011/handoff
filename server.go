@@ -19,6 +19,8 @@ type Server struct {
 	schedules  []ScheduledRun
 	cron       *cron.Cron
 
+	frontendPort int
+
 	// global runID counter, this should be per TestSuite in the future
 	currentRun int32
 
@@ -37,8 +39,9 @@ type Option func(s *Server)
 
 func New(opts ...Option) *Server {
 	s := &Server{
-		port:       1337,
-		testSuites: map[string]TestSuite{},
+		port:         1337,
+		frontendPort: 8080,
+		testSuites:   map[string]TestSuite{},
 		plugins: plugins{
 			all:               []Plugin{},
 			testStarted:       []TestStartedListener{},
@@ -169,7 +172,7 @@ func (s *Server) eventLoop() {
 func (s *Server) runTestSuite(suite TestSuite, testRun TestRun) {
 	start := time.Now()
 
-	testSuitesRunMetric.WithLabelValues(suite.AssociatedService, suite.Name).Inc()
+	// testSuitesRunMetric.WithLabelValues(suite.AssociatedService, suite.Name).Inc()
 	testSuitesRunning := testSuitesRunningMetric.WithLabelValues(suite.AssociatedService, suite.Name)
 
 	testSuitesRunning.Inc()
@@ -280,6 +283,12 @@ func WithPlugin(p Plugin) Option {
 func WithTestSuite(suite TestSuite) Option {
 	return func(s *Server) {
 		s.testSuites[suite.Name] = suite
+	}
+}
+
+func WithFrontendPort(port int) Option {
+	return func(s *Server) {
+		s.frontendPort = port
 	}
 }
 

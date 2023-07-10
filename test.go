@@ -19,7 +19,7 @@ type T struct {
 	logs       []string
 	passed     bool
 	skipped    bool
-	runContext map[string]any `json:"runContext"`
+	runContext map[string]any
 }
 
 // TB is a carbon copy of the stdlib testing.TB interface
