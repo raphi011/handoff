@@ -18,6 +18,8 @@ import (
 
 //go:embed testrun.tmpl
 var testRunTemplate string
+//go:embed testruns.tmpl
+var testRunsTemplate string
 
 type NotFoundError struct {
 }
@@ -42,7 +44,8 @@ func (s *Server) runHTTP() error {
 	router.POST("/suite/:suite-name/run", s.StartTestSuiteRun)
 	router.GET("/suite/:suite-name/run/:run-id", s.GetTestSuiteRun)
 
-	router.GET("/", s.GetResults)
+	router.GET("/runs", s.GetResults)
+   router.GET("/runs/:run-id", s.GetResult)
 
 	log.Printf("Running server at port %d\n", s.port)
 
@@ -109,7 +112,25 @@ func (s *Server) GetResults(w http.ResponseWriter, r *http.Request, p httprouter
 		return
 	}
 
+   // ignore error for now
 	err = tmpl.Execute(w, testRun)
+   if err != nil {
+      log.Printf("error executing template %v", err)
+   }
+}
+
+func (s *Server) GetResult(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+   runID := p.ByName("run-id")
+
+   testRun, ok := s.testRuns.Load(runID)
+   if !ok {
+     s.httpError(w, NotFoundError{})
+     return
+   }
+
+
+	tmpl, err := template.New("results").Parse(testRunTemplate)
+   
 }
 
 func (s *Server) GetTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {

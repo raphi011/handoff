@@ -9,12 +9,14 @@
             <th>Name</th>
             <th>Passed</th>
             <th>Start / End</th>
+            <th>Duration</th>
          </tr>
       {{ range .TestResults }}
          <tr>
            <td>{{ .Name }}</td>
            <td>{{ .Passed }}</td>
            <td>{{ .Start.Format "02.01 15:04:05" }} - {{ .End.Format "15:04:05" }}</td>
+           <td>{{ .End - .Start }}
          </tr>
       {{ end }}
       </table>
