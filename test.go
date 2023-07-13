@@ -121,6 +121,9 @@ type TestRunResult struct {
 	// RunContext is data that can be set by the test. This can be used
 	// to add additional context to the test run, e.g. correlation ids.
 	RunContext map[string]any `json:"runContext"`
+	// PluginContext contains per plugin information that was created from
+	// a test run and can be used to show additional information to a developer.
+	PluginContext map[string]any
 }
 
 type Test struct {

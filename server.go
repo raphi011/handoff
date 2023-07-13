@@ -212,6 +212,8 @@ func (s *Server) runTestSuite(suite TestSuite, testRun TestRun) {
 		}
 	}
 
+	testSuitesRunMetric.WithLabelValues(suite.AssociatedService, suite.Name, "PASSED").Inc()
+
 	s.events <- TestRunFinishedEvent{
 		TestRunIdentifier: TestRunIdentifier{
 			runID:     testRun.ID,

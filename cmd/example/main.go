@@ -22,6 +22,7 @@ func main() {
 			},
 		}),
 		handoff.WithScheduledRun("my-app", "@every 5s"),
+		handoff.WithPlugin(&handoff.ElasticSearchPlugin{}),
 	)
 
 	if err := s.Start(); err != nil {
