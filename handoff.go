@@ -153,7 +153,7 @@ func (s *Handoff) printTestSuites() {
 func (s *Handoff) initPlugins() error {
 	for _, p := range s.plugins.all {
 		if err := p.Init(); err != nil {
-			return err
+			return fmt.Errorf("initiating plugin %q: %w", p.Name(), err)
 		}
 
 		registeredHook := false
@@ -176,7 +176,7 @@ func (s *Handoff) initPlugins() error {
 		}
 
 		if !registeredHook {
-			return fmt.Errorf("plugin %s does not implement any hook", p.Name())
+			return fmt.Errorf("plugin %q does not implement any hook", p.Name())
 		}
 	}
 
@@ -191,7 +191,7 @@ func (s *Handoff) startSchedules() error {
 
 		ts, ok := s.testSuites[schedule.TestSuiteName]
 		if !ok {
-			return fmt.Errorf("test suite %s does not exist", schedule.TestSuiteName)
+			return fmt.Errorf("starting scheduled test suite run: test suite %q not found", schedule.TestSuiteName)
 		}
 
 		entryID, err := s.cron.AddFunc(schedule.Schedule, func() {
@@ -204,7 +204,7 @@ func (s *Handoff) startSchedules() error {
 		})
 
 		if err != nil {
-			return err
+			return fmt.Errorf("adding scheduled test suite run %q: %w", schedule.TestSuiteName, err)
 		}
 
 		s.schedules[i].EntryID = entryID
@@ -227,7 +227,7 @@ func (s *Handoff) eventLoop() {
 		if _, ok := e.(testRunStartedEvent); !ok {
 			val, found := s.testSuiteRuns.Load(key)
 			if !found {
-				slog.Warn("could not handle event, run not found", "run-id", key)
+				slog.Warn("could not handle event, run not found", "run-id", key, "event", fmt.Sprintf("%T", e))
 				return
 			}
 
@@ -249,7 +249,6 @@ func (s *Handoff) eventLoop() {
 func (s *Handoff) runTestSuite(suite model.TestSuite, testRun model.TestSuiteRun) {
 	start := time.Now()
 
-	// testSuitesRunMetric.WithLabelValues(suite.AssociatedService, suite.Name).Inc()
 	testSuitesRunning := metric.TestSuitesRunning.WithLabelValues(suite.AssociatedService, suite.Name)
 
 	testSuitesRunning.Inc()
