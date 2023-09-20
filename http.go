@@ -38,6 +38,9 @@ func (s *Handoff) runHTTP() error {
 
 	router.Handler("GET", "/metrics", promhttp.Handler())
 
+	router.GET("/healthz", s.getHealth)
+	router.GET("/ready", s.getReady)
+
 	router.POST("/suites/:suite-name/runs", s.startTestSuiteRun)
 	router.GET("/suites", s.getTestSuites)
 	router.GET("/suites/:suite-name/runs", s.getTestSuiteRuns)
@@ -101,6 +104,14 @@ func (s *Handoff) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p http
 	}
 
 	s.writeResponse(w, r, testRun)
+}
+
+func (s *Handoff) getHealth(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Handoff) getReady(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Handoff) getTestSuiteRuns(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
