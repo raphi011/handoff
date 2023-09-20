@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "handoff.fullname" . }}-test-connection"
+  labels:
+    {{- include "handoff.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args: ['{{ .Chart.Name }}:{{ .Values.service.port }}']
+  restartPolicy: Never
