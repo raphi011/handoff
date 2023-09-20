@@ -15,6 +15,9 @@ var testRunTemplate string
 //go:embed testruns.tmpl
 var testRunsTemplate string
 
+//go:embed testsuites.tmpl
+var testSuitesTemplate string
+
 var templatesByName map[string]*template.Template
 
 func init() {
@@ -26,6 +29,7 @@ func init() {
 	}{
 		{name: "test-run", template: testRunTemplate},
 		{name: "test-runs", template: testRunsTemplate},
+		{name: "test-suites", template: testSuitesTemplate},
 	}
 
 	for _, t := range templates {
@@ -44,4 +48,8 @@ func RenderTestRun(testRun model.TestSuiteRun, w io.Writer) error {
 
 func RenderTestRuns(testRuns []model.TestSuiteRun, w io.Writer) error {
 	return templatesByName["test-runs"].Execute(w, testRuns)
+}
+
+func RenderTestSuites(testSuites []model.TestSuite, w io.Writer) error {
+	return templatesByName["test-suites"].Execute(w, testSuites)
 }

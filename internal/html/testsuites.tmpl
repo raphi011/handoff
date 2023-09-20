@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+   <head>
+   </head>
+   <body>
+      <h1>Test suites</h1>
+      <ul>
+      {{ range . }}
+         <li>
+           <a href="/suites/{{ .Name }}/runs">{{ .Name }}</td>
+        </li>
+      {{ end }}
+      </ul>
+      </table>
+   </body>
+</html>
+

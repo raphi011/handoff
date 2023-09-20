@@ -39,6 +39,7 @@ func (s *Handoff) runHTTP() error {
 	router.Handler("GET", "/metrics", promhttp.Handler())
 
 	router.POST("/suites/:suite-name/runs", s.startTestSuiteRun)
+	router.GET("/suites", s.getTestSuites)
 	router.GET("/suites/:suite-name/runs", s.getTestSuiteRuns)
 	router.GET("/suites/:suite-name/runs/:run-id", s.getTestSuiteRun)
 
@@ -80,6 +81,18 @@ func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p ht
 	s.writeResponse(w, r, tr)
 }
 
+func (s *Handoff) getTestSuites(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	testSuites := make([]model.TestSuite, len(s.testSuites))
+
+	i := 0
+	for _, ts := range s.testSuites {
+		testSuites[i] = ts
+		i++
+	}
+
+	s.writeResponse(w, r, testSuites)
+}
+
 func (s *Handoff) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	testRun, err := s.getTestRun(p)
 	if err != nil {
@@ -109,6 +122,8 @@ func (s *Handoff) writeResponse(w http.ResponseWriter, r *http.Request, body any
 			html.RenderTestRun(t, w)
 		case []model.TestSuiteRun:
 			html.RenderTestRuns(t, w)
+		case []model.TestSuite:
+			html.RenderTestSuites(t, w)
 		default:
 			return fmt.Errorf("no template available for type %v", t)
 		}
@@ -187,10 +202,11 @@ func (s *Handoff) httpError(w http.ResponseWriter, err error) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	} else if errors.As(err, &malformedRequest) {
-		// todo add reason and param name to the response
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(err.Error()))
 		return
 	}
 
 	w.WriteHeader(http.StatusInternalServerError)
+	slog.Warn("internel server error", "error", err)
 }
