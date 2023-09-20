@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
    <head>
@@ -6,9 +5,9 @@
    <body>
       <h1>Testruns</h1>
       <ul>
-      {{ range .TestRuns }}
+      {{ range . }}
          <li>
-           <a>{{ .Name }}</td>
+           <a href="/suites/{{ .SuiteName }}/runs/{{ .ID }}">{{ .SuiteName }} (#{{ .ID }}): {{ .Result }}</td>
         </li>
       {{ end }}
       </ul>

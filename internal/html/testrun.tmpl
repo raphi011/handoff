@@ -3,7 +3,7 @@
    <head>
    </head>
    <body>
-      {{ .SuiteName }}
+      <h1>{{ .SuiteName }}</h1>
       <table>
          <tr>
             <th>Name</th>
@@ -16,7 +16,7 @@
            <td>{{ .Name }}</td>
            <td>{{ .Passed }}</td>
            <td>{{ .Start.Format "02.01 15:04:05" }} - {{ .End.Format "15:04:05" }}</td>
-           <td>{{ .End - .Start }}
+           <td>{{ .End.Sub .Start }}</td>
          </tr>
       {{ end }}
       </table>

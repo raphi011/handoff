@@ -1,55 +1,59 @@
 package main
 
 import (
-	"log"
+	"os"
 	"time"
 
 	"github.com/raphi011/handoff"
+	"github.com/raphi011/handoff/plugin"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/exp/slog"
 )
 
 func main() {
-	s := handoff.New(
+	h := handoff.New(
 		handoff.WithTestSuite(handoff.TestSuite{
 			Name: "my-app",
-			Tests: map[string]handoff.TestFunc{
-				"TestSleep":   TestSleep,
-				"TestSuccess": TestSuccess,
-				"TestPanic":   TestPanic,
-				"TestSkip":    TestSkip,
-				"TestFatal":   TestFatal,
-				"TestTestify": TestTestify,
+			Tests: []handoff.TestFunc{
+				Sleep,
+				Success,
+				Panic,
+				Skip,
+				Fatal,
+				Testify,
 			},
 		}),
 		handoff.WithScheduledRun("my-app", "@every 5s"),
-		handoff.WithPlugin(&handoff.ElasticSearchPlugin{}),
+		handoff.WithPlugin(&plugin.ElasticSearchPlugin{}),
+		handoff.WithServerPort(1337),
 	)
 
-	if err := s.Start(); err != nil {
-		log.Fatal(err)
+	if err := h.Run(); err != nil {
+		slog.Error(err.Error())
+		os.Exit(-1)
 	}
 }
 
-func TestSleep(t handoff.TB) {
+func Sleep(t handoff.TB) {
 	time.Sleep(1 * time.Second)
 }
 
-func TestSuccess(t handoff.TB) {
+func Success(t handoff.TB) {
 	t.Log("Executed TestAcceptance")
 }
 
-func TestFatal(t handoff.TB) {
+func Fatal(t handoff.TB) {
 	t.Fatal("fatal error")
 }
 
-func TestPanic(t handoff.TB) {
+func Panic(t handoff.TB) {
 	panic("panic!")
 }
 
-func TestSkip(t handoff.TB) {
+func Skip(t handoff.TB) {
 	t.Skip("skipping test")
 }
 
-func TestTestify(t handoff.TB) {
+func Testify(t handoff.TB) {
 	assert.Equal(t, 1, 2)
 }

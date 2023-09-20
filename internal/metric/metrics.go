@@ -1,4 +1,4 @@
-package handoff
+package metric
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -6,17 +6,16 @@ import (
 )
 
 var (
-	testSuitesRunningMetric = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	TestSuitesRunning = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "handoff_testsuites_running",
 		Help: "The number of test suites currently running",
 	}, []string{"associated_service", "suite_name"})
 
-	testSuitesRunMetric = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "handoff_testsuites_run_total",
+	TestSuitesRun = promauto.NewCounterVec(prometheus.CounterOpts{Name: "handoff_testsuites_run_total",
 		Help: "The number of test suites run since the service was started",
 	}, []string{"associated_service", "suite_name", "result"})
 
-	testRunsMetric = promauto.NewCounterVec(prometheus.CounterOpts{
+	TestRunsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "handoff_tests_run_total",
 		Help: "The number of tests run since the service was started",
 	}, []string{"associated_service", "suite_name", "result"})

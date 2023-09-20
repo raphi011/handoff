@@ -1,58 +1,53 @@
 package handoff
 
 import (
-	_ "embed"
 	"encoding/json"
 	"errors"
-	"html/template"
-	"log"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/raphi011/handoff/internal/html"
+	"github.com/raphi011/handoff/internal/model"
+	"golang.org/x/exp/slog"
 )
 
-//go:embed testrun.tmpl
-var testRunTemplate string
-//go:embed testruns.tmpl
-var testRunsTemplate string
+type notFoundError struct{}
 
-type NotFoundError struct {
-}
-
-func (e NotFoundError) Error() string {
+func (e notFoundError) Error() string {
 	return "not found"
 }
 
-type MalformedRequestError struct {
-	param string
+type malformedRequestError struct {
+	param  string
+	reason string
 }
 
-func (e MalformedRequestError) Error() string {
-	return "malformed request param: " + e.param
+func (e malformedRequestError) Error() string {
+	return "malformed request param: " + e.param + " reason: " + e.reason
 }
 
-func (s *Server) runHTTP() error {
+func (s *Handoff) runHTTP() error {
 	router := httprouter.New()
 
 	router.Handler("GET", "/metrics", promhttp.Handler())
 
-	router.POST("/suite/:suite-name/run", s.StartTestSuiteRun)
-	router.GET("/suite/:suite-name/run/:run-id", s.GetTestSuiteRun)
+	router.POST("/suites/:suite-name/runs", s.startTestSuiteRun)
+	router.GET("/suites/:suite-name/runs", s.getTestSuiteRuns)
+	router.GET("/suites/:suite-name/runs/:run-id", s.getTestSuiteRun)
 
-	router.GET("/runs", s.GetResults)
-   router.GET("/runs/:run-id", s.GetResult)
-
-	log.Printf("Running server at port %d\n", s.port)
+	slog.Info("Starting http server", "port", s.port)
 
 	return http.ListenAndServe("localhost:"+strconv.Itoa(s.port), router)
 }
 
-func (s *Server) StartTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	suite, err := s.getSuite(r, p)
 	if err != nil {
 		s.httpError(w, err)
@@ -64,132 +59,135 @@ func (s *Server) StartTestSuiteRun(w http.ResponseWriter, r *http.Request, p htt
 	if filterParam := r.URL.Query().Get("filter"); filterParam != "" {
 		filter, err = regexp.Compile(filterParam)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
+			s.httpError(w, malformedRequestError{param: "filter", reason: "invalid regex"})
 			return
 		}
 	}
 
-	event := TestRunStartedEvent{
-		TestRunIdentifier: TestRunIdentifier{runID: s.nextID(), suiteName: suite.Name},
-		Scheduled:         time.Now(),
-		TriggeredBy:       "http",
-		TestFilter:        filter,
-		Tests:             len(suite.Tests),
+	event := testRunStartedEvent{
+		testRunIdentifier: testRunIdentifier{runID: s.nextID(), suiteName: suite.Name},
+		scheduled:         time.Now(),
+		triggeredBy:       "http",
+		testFilter:        filter,
+		tests:             len(suite.Tests),
 	}
 
 	s.events <- event
 
-	tr := event.Apply(TestRun{})
+	tr := event.Apply(model.TestSuiteRun{})
 
-	body, err := json.Marshal(tr)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	if _, err = w.Write(body); err != nil {
-		log.Printf("error writing body: %v", err)
-	}
-
-	w.WriteHeader(http.StatusCreated)
+	// TODO: set status created code
+	s.writeResponse(w, r, tr)
 }
 
-func (s *Server) GetResults(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	var testRun TestRun
-	s.testRuns.Range(func(key, value any) bool {
-		testRun = value.(TestRun)
-		return false
-	})
-
-	if testRun.SuiteName == "" {
-		w.Write([]byte("No testruns found"))
-		return
-	}
-
-	tmpl, err := template.New("results").Parse(testRunTemplate)
+func (s *Handoff) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	testRun, err := s.getTestRun(p)
 	if err != nil {
 		s.httpError(w, err)
 		return
 	}
 
-   // ignore error for now
-	err = tmpl.Execute(w, testRun)
-   if err != nil {
-      log.Printf("error executing template %v", err)
-   }
+	s.writeResponse(w, r, testRun)
 }
 
-func (s *Server) GetResult(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-   runID := p.ByName("run-id")
+func (s *Handoff) getTestSuiteRuns(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	testRuns := s.getTestRuns(p)
 
-   testRun, ok := s.testRuns.Load(runID)
-   if !ok {
-     s.httpError(w, NotFoundError{})
-     return
-   }
-
-
-	tmpl, err := template.New("results").Parse(testRunTemplate)
-   
+	if err := s.writeResponse(w, r, testRuns); err != nil {
+		slog.Warn("writing get test suite runs response: %v", err)
+	}
 }
 
-func (s *Server) GetTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	tr, err := s.getTestRun(r, p)
+func (s *Handoff) writeResponse(w http.ResponseWriter, r *http.Request, body any) error {
+	var err error
+
+	if headerAcceptsType(r.Header, "text/html") {
+		w.Header().Add("Content-Type", "text/html")
+
+		switch t := body.(type) {
+		case model.TestSuiteRun:
+			html.RenderTestRun(t, w)
+		case []model.TestSuiteRun:
+			html.RenderTestRuns(t, w)
+		default:
+			return fmt.Errorf("no template available for type %v", t)
+		}
+	} else {
+		w.Header().Add("Content-Type", "application/json")
+
+		enc := json.NewEncoder(w)
+		err = enc.Encode(body)
+	}
+
 	if err != nil {
-		s.httpError(w, err)
-		return
+		return fmt.Errorf("marshalling response: %w", err)
 	}
 
-	body, err := json.Marshal(tr)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	if _, err = w.Write(body); err != nil {
-		log.Printf("error writing body: %v", err)
-	}
+	return nil
 }
 
-func (s *Server) getSuite(r *http.Request, p httprouter.Params) (TestSuite, error) {
+func headerAcceptsType(h http.Header, mimeType string) bool {
+	accept := h.Get("Accept")
+
+	return strings.Contains(accept, mimeType)
+}
+
+func (s *Handoff) getSuite(r *http.Request, p httprouter.Params) (model.TestSuite, error) {
 	suiteName := p.ByName("suite-name")
 
 	ts, ok := s.testSuites[suiteName]
 
 	if !ok {
-		return TestSuite{}, NotFoundError{}
+		return model.TestSuite{}, notFoundError{}
 	}
 
 	return ts, nil
 }
 
-func (s *Server) nextID() int32 {
+func (s *Handoff) nextID() int32 {
 	return atomic.AddInt32(&s.currentRun, 1)
 }
 
-func (s *Server) getTestRun(r *http.Request, p httprouter.Params) (TestRun, error) {
+func (s *Handoff) getTestRun(p httprouter.Params) (model.TestSuiteRun, error) {
 	suiteName := p.ByName("suite-name")
 	runID, err := strconv.Atoi(p.ByName("run-id"))
 	if err != nil {
-		return TestRun{}, MalformedRequestError{param: "run-id"}
+		return model.TestSuiteRun{}, malformedRequestError{param: "run-id", reason: "must be an integer"}
 	}
 
-	tr, ok := s.testRuns.Load(testRunKey(suiteName, int32(runID)))
+	tr, ok := s.testSuiteRuns.Load(testRunKey(suiteName, int32(runID)))
 	if !ok {
-		return TestRun{}, NotFoundError{}
+		return model.TestSuiteRun{}, notFoundError{}
 	}
 
-	return tr.(TestRun), nil
+	return tr.(model.TestSuiteRun), nil
 }
 
-func (s *Server) httpError(w http.ResponseWriter, err error) {
-	var notFound NotFoundError
-	var malformedRequest MalformedRequestError
+func (s *Handoff) getTestRuns(p httprouter.Params) []model.TestSuiteRun {
+	suiteName := p.ByName("suite-name")
+
+	testRuns := []model.TestSuiteRun{}
+
+	s.testSuiteRuns.Range(func(key, value any) bool {
+		if k := key.(string); strings.HasPrefix(k, suiteName+"-") {
+			testRuns = append(testRuns, value.(model.TestSuiteRun))
+		}
+
+		return true
+	})
+
+	return testRuns
+}
+
+func (s *Handoff) httpError(w http.ResponseWriter, err error) {
+	var notFound notFoundError
+	var malformedRequest malformedRequestError
 
 	if errors.As(err, &notFound) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	} else if errors.As(err, &malformedRequest) {
+		// todo add reason and param name to the response
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}

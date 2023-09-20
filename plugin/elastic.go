@@ -1,44 +1,9 @@
-package handoff
+package plugin
 
 import (
 	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/raphi011/handoff/internal/model"
 )
-
-type Plugin interface {
-	Name() string
-	Init() error
-	Stop() error
-}
-
-type TestStartedListener interface {
-	TestStarted(suite TestSuite, run TestRun, testName string)
-}
-
-type TestFinishedListener interface {
-	TestFinished(suite TestSuite, run TestRun, testName string, context map[string]any)
-}
-
-type TestSuiteStartedListener interface {
-	TestSuiteStarted()
-}
-
-type TestSuiteFinishedListener interface {
-	TestSuiteFinished()
-}
-
-// PagerDutyPlugin supports creating and resolving incidents when
-// testsuites fail.
-type PagerDutyPlugin struct {
-}
-
-// GithubPlugin supports running testsuites on PRs.
-type GithubPlugin struct {
-}
-
-// SlackPlugin supports sending messages to slack channels that inform on
-// test runs.
-type SlackPlugin struct {
-}
 
 // ElasticSearchPlugin supports fetching logs created by test runs.
 type ElasticSearchPlugin struct {
@@ -66,8 +31,8 @@ const (
 )
 
 func (p *ElasticSearchPlugin) TestFinished(
-	suite TestSuite,
-	run TestRun,
+	suite model.TestSuite,
+	run model.TestSuiteRun,
 	testName string,
 	runContext map[string]any) {
 	p.fetchLogsByCorrelationID(runContext)

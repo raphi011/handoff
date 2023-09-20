@@ -4,70 +4,72 @@ import (
 	"fmt"
 	"regexp"
 	"time"
+
+	"github.com/raphi011/handoff/internal/model"
 )
 
-type Event interface {
-	Apply(TestRun) TestRun
+type event interface {
+	Apply(model.TestSuiteRun) model.TestSuiteRun
 	RunID() int32
 	SuiteName() string
 }
 
-type TestRunIdentifier struct {
+type testRunIdentifier struct {
 	runID     int32
 	suiteName string
 }
 
-func (e TestRunIdentifier) SuiteName() string {
+func (e testRunIdentifier) SuiteName() string {
 	return e.suiteName
 }
 
-func (e TestRunIdentifier) RunID() int32 {
+func (e testRunIdentifier) RunID() int32 {
 	return e.runID
 }
 
-type TestRunStartedEvent struct {
-	TestRunIdentifier
-	Scheduled   time.Time
-	TriggeredBy string
-	TestFilter  *regexp.Regexp
-	Tests       int
+type testRunStartedEvent struct {
+	testRunIdentifier
+	scheduled   time.Time
+	triggeredBy string
+	testFilter  *regexp.Regexp
+	tests       int
 }
 
-func (e TestRunStartedEvent) Apply(ts TestRun) TestRun {
+func (e testRunStartedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 	ts.ID = e.runID
 	ts.SuiteName = e.suiteName
-	ts.TestResults = []TestRunResult{}
-	ts.Scheduled = e.Scheduled
+	ts.TestResults = []model.TestRun{}
+	ts.Scheduled = e.scheduled
 	ts.SetupLogs = []string{}
-	ts.testFilterRegex = e.TestFilter
-	ts.Tests = e.Tests
+	ts.TestFilterRegex = e.testFilter
+	ts.Tests = e.tests
 
-	if e.TestFilter != nil {
-		ts.TestFilter = e.TestFilter.String()
+	if e.testFilter != nil {
+		ts.TestFilter = e.testFilter.String()
 	}
 
 	return ts
 }
 
-type TestRunFinishedEvent struct {
-	TestRunIdentifier
+type testRunFinishedEvent struct {
+	testRunIdentifier
 	start time.Time
 	end   time.Time
 	// skipped is the # of tests skipped by the run TestFilter
 	skipped int
 }
 
-func (e TestRunFinishedEvent) Apply(ts TestRun) TestRun {
+func (e testRunFinishedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 	ts.Start = e.start
 	ts.End = e.end
 	ts.DurationInMS = e.end.Sub(e.start).Milliseconds()
 	// add to skipped because each test can also call t.Skip()
 	ts.Skipped += e.skipped
 
-	result := ResultPassed
+	result := model.ResultPassed
 
 	if ts.Failed > 0 {
-		result = ResultFailed
+		result = model.ResultFailed
 	}
 
 	ts.Result = result
@@ -75,15 +77,15 @@ func (e TestRunFinishedEvent) Apply(ts TestRun) TestRun {
 	return ts
 }
 
-type TestRunSetupFailedEvent struct {
-	TestRunIdentifier
+type testRunSetupFailedEvent struct {
+	testRunIdentifier
 	start time.Time
 	end   time.Time
 	err   error
 }
 
-func (e TestRunSetupFailedEvent) Apply(ts TestRun) TestRun {
-	ts.Result = ResultSetupFailed
+func (e testRunSetupFailedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
+	ts.Result = model.ResultSetupFailed
 	ts.Start = e.start
 	ts.End = e.end
 	ts.DurationInMS = e.end.Sub(e.start).Milliseconds()
@@ -91,8 +93,8 @@ func (e TestRunSetupFailedEvent) Apply(ts TestRun) TestRun {
 	return ts
 }
 
-type TestFinishedEvent struct {
-	TestRunIdentifier
+type testFinishedEvent struct {
+	testRunIdentifier
 	start    time.Time
 	end      time.Time
 	skipped  bool
@@ -102,14 +104,13 @@ type TestFinishedEvent struct {
 	logs     []string
 }
 
-func (e TestFinishedEvent) Apply(ts TestRun) TestRun {
+func (e testFinishedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 	passed := e.passed
 	logs := e.logs
 
 	if e.recovery != nil && !e.skipped {
 		if _, ok := e.recovery.(failTestErr); !ok {
-			// this looks like an unexpected panic (does not originate
-			// from handoff), therefor log it
+			// this is an unexpected panic (does not originate from handoff)
 			logs = append(logs, fmt.Sprintf("%v", e.recovery))
 		}
 
@@ -124,7 +125,7 @@ func (e TestFinishedEvent) Apply(ts TestRun) TestRun {
 		ts.Failed++
 	}
 
-	ts.TestResults = append(ts.TestResults, TestRunResult{
+	ts.TestResults = append(ts.TestResults, model.TestRun{
 		Name:         e.testName,
 		Passed:       passed,
 		Logs:         logs,
