@@ -180,6 +180,11 @@ func (s *Handoff) getTestRun(ctx context.Context, p httprouter.Params) (model.Te
 		return model.TestSuiteRun{}, err
 	}
 
+	tr.TestResults, err = s.storage.LoadTestRuns(ctx, tr.ID)
+	if err != nil {
+		return model.TestSuiteRun{}, err
+	}
+
 	return tr, nil
 }
 

@@ -203,6 +203,30 @@ func (s *Storage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string)
 	return runs, nil
 }
 
+func (s *Storage) LoadTestRuns(ctx context.Context, tsrID int) ([]model.TestRun, error) {
+	runs := []model.TestRun{}
+	r, err := s.db.NamedQueryContext(ctx, `SELECT 
+		testName, passed, skipped, logs, startTime, endTime
+		FROM TestRun WHERE suiteRunId=:suiteRunId`,
+		map[string]any{"suiteRunId": tsrID},
+	)
+	if err != nil {
+		return runs, err
+	}
+	defer r.Close()
+
+	for r.Next() {
+		tr, err := scanTestRun(r)
+		if err != nil {
+			return nil, err
+		}
+
+		runs = append(runs, tr)
+	}
+
+	return runs, nil
+}
+
 func (s *Storage) UpsertTestRun(ctx context.Context, tsrID int, tr model.TestRun) error {
 	logs := ""
 	if len(tr.Logs) > 0 {
@@ -234,6 +258,37 @@ func timeFormat(t time.Time) string {
 
 func parseDate(t string) (time.Time, error) {
 	return time.Parse(time.RFC3339, t)
+}
+
+func scanTestRun(r *sqlx.Rows) (model.TestRun, error) {
+	tr := model.TestRun{}
+
+	var start, end string
+
+	var logs string
+
+	err := r.Scan(
+		&tr.Name,
+		&tr.Passed,
+		&tr.Skipped,
+		&logs,
+		&start,
+		&end,
+	)
+	if err != nil {
+		return model.TestRun{}, fmt.Errorf("scanning test suite run: %w", err)
+	}
+
+	tr.Logs = strings.Split(logs, "\n")
+
+	if tr.Start, err = parseDate(start); err != nil {
+		return model.TestRun{}, fmt.Errorf("parsing start time: %w", err)
+	}
+	if tr.End, err = parseDate(end); err != nil {
+		return model.TestRun{}, fmt.Errorf("parsing end time: %w", err)
+	}
+
+	return tr, nil
 }
 
 func scanTestSuiteRun(r *sqlx.Rows) (model.TestSuiteRun, error) {
