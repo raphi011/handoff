@@ -1,6 +1,6 @@
-// Unfortunately the `model` package, although very atypical for projects written in go,
-// cannot be avoided as it helps avoid cyclic dependencies. Types required by a library user
-// such as `TestSuite` are reexported by the handoff package.
+// The `model`s package is very atypical for projects written in go, but unfortunately
+// cannot be avoided as it helps to avoid cyclic dependencies. Types required by a library user
+// such as `TestFunc` are reexported by the handoff package.
 package model
 
 import (
@@ -10,7 +10,7 @@ import (
 
 type TestSuiteRun struct {
 	// ID is the identifier of the test run.
-	ID int32 `json:"id"`
+	ID int `json:"id"`
 	// SuiteName is the name of the test suite that is run.
 	SuiteName string `json:"suiteName"`
 	// TestResults contains the detailed test results of each test.

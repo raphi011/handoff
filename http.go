@@ -1,6 +1,7 @@
 package handoff
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/julienschmidt/httprouter"
@@ -17,12 +17,6 @@ import (
 	"github.com/raphi011/handoff/internal/model"
 	"golang.org/x/exp/slog"
 )
-
-type notFoundError struct{}
-
-func (e notFoundError) Error() string {
-	return "not found"
-}
 
 type malformedRequestError struct {
 	param  string
@@ -48,7 +42,7 @@ func (s *Handoff) runHTTP() error {
 
 	slog.Info("Starting http server", "port", s.port)
 
-	return http.ListenAndServe("localhost:"+strconv.Itoa(s.port), router)
+	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), router)
 }
 
 func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -69,7 +63,7 @@ func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p ht
 	}
 
 	event := testRunStartedEvent{
-		testRunIdentifier: testRunIdentifier{runID: s.nextID(), suiteName: suite.Name},
+		testRunIdentifier: testRunIdentifier{suiteName: suite.Name},
 		scheduled:         time.Now(),
 		triggeredBy:       "http",
 		testFilter:        filter,
@@ -85,10 +79,10 @@ func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p ht
 }
 
 func (s *Handoff) getTestSuites(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	testSuites := make([]model.TestSuite, len(s.testSuites))
+	testSuites := make([]model.TestSuite, len(s.readOnlyTestSuites))
 
 	i := 0
-	for _, ts := range s.testSuites {
+	for _, ts := range s.readOnlyTestSuites {
 		testSuites[i] = ts
 		i++
 	}
@@ -97,7 +91,7 @@ func (s *Handoff) getTestSuites(w http.ResponseWriter, r *http.Request, p httpro
 }
 
 func (s *Handoff) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	testRun, err := s.getTestRun(p)
+	testRun, err := s.getTestRun(r.Context(), p)
 	if err != nil {
 		s.httpError(w, err)
 		return
@@ -115,7 +109,11 @@ func (s *Handoff) getReady(w http.ResponseWriter, r *http.Request, p httprouter.
 }
 
 func (s *Handoff) getTestSuiteRuns(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	testRuns := s.getTestRuns(p)
+	testRuns, err := s.getTestRuns(r.Context(), p)
+	if err != nil {
+		s.httpError(w, err)
+		return
+	}
 
 	if err := s.writeResponse(w, r, testRuns); err != nil {
 		slog.Warn("writing get test suite runs response: %v", err)
@@ -161,52 +159,38 @@ func headerAcceptsType(h http.Header, mimeType string) bool {
 func (s *Handoff) getSuite(r *http.Request, p httprouter.Params) (model.TestSuite, error) {
 	suiteName := p.ByName("suite-name")
 
-	ts, ok := s.testSuites[suiteName]
+	ts, ok := s.readOnlyTestSuites[suiteName]
 
 	if !ok {
-		return model.TestSuite{}, notFoundError{}
+		return model.TestSuite{}, model.NotFoundError{}
 	}
 
 	return ts, nil
 }
 
-func (s *Handoff) nextID() int32 {
-	return atomic.AddInt32(&s.currentRun, 1)
-}
-
-func (s *Handoff) getTestRun(p httprouter.Params) (model.TestSuiteRun, error) {
+func (s *Handoff) getTestRun(ctx context.Context, p httprouter.Params) (model.TestSuiteRun, error) {
 	suiteName := p.ByName("suite-name")
 	runID, err := strconv.Atoi(p.ByName("run-id"))
 	if err != nil {
 		return model.TestSuiteRun{}, malformedRequestError{param: "run-id", reason: "must be an integer"}
 	}
 
-	tr, ok := s.testSuiteRuns.Load(testRunKey(suiteName, int32(runID)))
-	if !ok {
-		return model.TestSuiteRun{}, notFoundError{}
+	tr, err := s.storage.LoadTestSuiteRun(ctx, suiteName, int(runID))
+	if err != nil {
+		return model.TestSuiteRun{}, err
 	}
 
-	return tr.(model.TestSuiteRun), nil
+	return tr, nil
 }
 
-func (s *Handoff) getTestRuns(p httprouter.Params) []model.TestSuiteRun {
+func (s *Handoff) getTestRuns(ctx context.Context, p httprouter.Params) ([]model.TestSuiteRun, error) {
 	suiteName := p.ByName("suite-name")
 
-	testRuns := []model.TestSuiteRun{}
-
-	s.testSuiteRuns.Range(func(key, value any) bool {
-		if k := key.(string); strings.HasPrefix(k, suiteName+"-") {
-			testRuns = append(testRuns, value.(model.TestSuiteRun))
-		}
-
-		return true
-	})
-
-	return testRuns
+	return s.storage.LoadTestSuiteRunsByName(ctx, suiteName)
 }
 
 func (s *Handoff) httpError(w http.ResponseWriter, err error) {
-	var notFound notFoundError
+	var notFound model.NotFoundError
 	var malformedRequest malformedRequestError
 
 	if errors.As(err, &notFound) {

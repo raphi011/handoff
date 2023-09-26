@@ -10,12 +10,12 @@ import (
 
 type event interface {
 	Apply(model.TestSuiteRun) model.TestSuiteRun
-	RunID() int32
+	RunID() int
 	SuiteName() string
 }
 
 type testRunIdentifier struct {
-	runID     int32
+	runID     int
 	suiteName string
 }
 
@@ -23,7 +23,7 @@ func (e testRunIdentifier) SuiteName() string {
 	return e.suiteName
 }
 
-func (e testRunIdentifier) RunID() int32 {
+func (e testRunIdentifier) RunID() int {
 	return e.runID
 }
 

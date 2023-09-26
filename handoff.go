@@ -1,15 +1,16 @@
 package handoff
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/raphi011/handoff/internal/metric"
 	"github.com/raphi011/handoff/internal/model"
+	"github.com/raphi011/handoff/internal/storage"
 	"github.com/raphi011/handoff/plugin"
 	"github.com/robfig/cron/v3"
 	"golang.org/x/exp/slog"
@@ -20,14 +21,13 @@ type Handoff struct {
 	serverMode bool
 
 	plugins plugins
-	// immutable readonly map of testsuites
-	testSuites    map[string]model.TestSuite
-	testSuiteRuns sync.Map
-	schedules     []scheduledRun
-	cron          *cron.Cron
 
-	// global runID counter, this should be per TestSuite in the future
-	currentRun int32
+	readOnlyTestSuites map[string]model.TestSuite
+
+	schedules []scheduledRun
+	cron      *cron.Cron
+
+	storage *storage.Storage
 
 	events chan event
 }
@@ -72,9 +72,9 @@ type option func(s *Handoff)
 // New configures a new Handoff instance.
 func New(opts ...option) *Handoff {
 	s := &Handoff{
-		port:       1337,
-		serverMode: false,
-		testSuites: map[string]model.TestSuite{},
+		port:               1337,
+		serverMode:         false,
+		readOnlyTestSuites: map[string]model.TestSuite{},
 		plugins: plugins{
 			all:               []Plugin{},
 			testStarted:       []plugin.TestStartedListener{},
@@ -82,8 +82,7 @@ func New(opts ...option) *Handoff {
 			testSuiteFinished: []plugin.TestSuiteFinishedListener{},
 			testSuiteStarted:  []plugin.TestSuiteStartedListener{},
 		},
-		testSuiteRuns: sync.Map{},
-		events:        make(chan event, 100),
+		events: make(chan event, 100),
 	}
 
 	for _, o := range opts {
@@ -97,12 +96,18 @@ func (s *Handoff) Run() error {
 	s.parseFlags()
 
 	if err := s.initPlugins(); err != nil {
-		return err
+		return fmt.Errorf("init plugins: %w", err)
 	}
 
 	if s.serverMode {
+		db, err := storage.New("")
+		if err != nil {
+			return fmt.Errorf("init storage: %w", err)
+		}
+		s.storage = db
+
 		if err := s.startSchedules(); err != nil {
-			return err
+			return fmt.Errorf("start schedules: %w", err)
 		}
 
 		go s.eventLoop()
@@ -133,7 +138,7 @@ func (s *Handoff) parseFlags() {
 func (s *Handoff) printTestSuites() {
 	b := strings.Builder{}
 
-	for _, ts := range s.testSuites {
+	for _, ts := range s.readOnlyTestSuites {
 		b.WriteString("suite: \"" + ts.Name + "\"")
 		if ts.AssociatedService != "" {
 			b.WriteString(" (" + ts.AssociatedService + ")")
@@ -189,14 +194,14 @@ func (s *Handoff) startSchedules() error {
 	for i := range s.schedules {
 		schedule := s.schedules[i]
 
-		ts, ok := s.testSuites[schedule.TestSuiteName]
+		ts, ok := s.readOnlyTestSuites[schedule.TestSuiteName]
 		if !ok {
 			return fmt.Errorf("starting scheduled test suite run: test suite %q not found", schedule.TestSuiteName)
 		}
 
 		entryID, err := s.cron.AddFunc(schedule.Schedule, func() {
 			s.events <- testRunStartedEvent{
-				testRunIdentifier: testRunIdentifier{runID: s.nextID(), suiteName: schedule.TestSuiteName},
+				testRunIdentifier: testRunIdentifier{suiteName: schedule.TestSuiteName},
 				scheduled:         time.Now(),
 				triggeredBy:       "scheduled",
 				tests:             len(ts.Tests),
@@ -220,27 +225,47 @@ func (s *Handoff) startSchedules() error {
 // written to from here.
 func (s *Handoff) eventLoop() {
 	for e := range s.events {
-		key := testRunKey(e.SuiteName(), e.RunID())
+		ctx := context.Background()
 
 		testSuiteRun := model.TestSuiteRun{}
 
-		if _, ok := e.(testRunStartedEvent); !ok {
-			val, found := s.testSuiteRuns.Load(key)
-			if !found {
-				slog.Warn("could not handle event, run not found", "run-id", key, "event", fmt.Sprintf("%T", e))
-				return
-			}
+		isNewTestRun := e.RunID() < 1
 
-			testSuiteRun = val.(model.TestSuiteRun)
+		if !isNewTestRun {
+			var err error
+
+			testSuiteRun, err = s.storage.LoadTestSuiteRun(ctx, e.SuiteName(), e.RunID())
+			if err != nil {
+				slog.Error("could not handle event", "error", err, "run-id", e.RunID(), "event", fmt.Sprintf("%T", e))
+				continue
+			}
 		}
 
 		testSuiteRun = e.Apply(testSuiteRun)
 
-		s.testSuiteRuns.Store(key, testSuiteRun)
+		var err error
+
+		if isNewTestRun {
+			testSuiteRun.ID, err = s.storage.SaveTestSuiteRun(ctx, testSuiteRun)
+		} else {
+			err = s.storage.UpdateTestSuiteRun(ctx, testSuiteRun)
+		}
+
+		// `TestResults` will only contain new / updated testresults so we can assume
+		// that every entry needs to be persisted.
+		for _, tr := range testSuiteRun.TestResults {
+			s.storage.UpsertTestRun(ctx, testSuiteRun.ID, tr)
+		}
+
+		if err != nil {
+			slog.Error("could not persist test suite run", "error", err)
+			continue
+		}
 
 		switch e := e.(type) {
 		case testRunStartedEvent:
-			ts := s.testSuites[e.suiteName]
+			ts := s.readOnlyTestSuites[e.suiteName]
+
 			go s.runTestSuite(ts, testSuiteRun)
 		}
 	}
@@ -350,8 +375,4 @@ func (s *Handoff) notifyTestFinished(suite model.TestSuite, testRun model.TestSu
 	for _, p := range s.plugins.testFinished {
 		p.TestFinished(suite, testRun, name, runContext)
 	}
-}
-
-func testRunKey(suiteName string, runID int32) string {
-	return fmt.Sprintf("%s-%d", suiteName, runID)
 }

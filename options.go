@@ -32,7 +32,7 @@ func WithPlugin(p Plugin) option {
 
 func WithTestSuite(suite TestSuite) option {
 	return func(s *Handoff) {
-		s.testSuites[suite.Name] = mapTestSuite(suite)
+		s.readOnlyTestSuites[suite.Name] = mapTestSuite(suite)
 	}
 }
 
