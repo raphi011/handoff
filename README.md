@@ -23,6 +23,7 @@ See [the example app](./cmd/example/main.go).
 - [ ] (Technical) Websocket that returns realtime test results (including test logs)
 - [ ] (Technical) Authenticated HTTP requests through TLS client certificates
 - [ ] (Technical) Persistence layer (probably sqlite)
+- [ ] (Technical) Continue test runs on service restart
 - [ ] (Plugin) Pagerduty - failed e2e tests can triger alerts / incidents
 - [ ] (Plugin) Slack - send messages to slack channels when tests pass / fail
 - [ ] (Plugin) Github - pr status checks
@@ -39,6 +40,10 @@ See [the example app](./cmd/example/main.go).
 ## Non goals
 
 - Implement a new assertion library. We should aim to be compatible with existing ones.
+
+## Technical limitations
+
+- No way to set a timeout for test functions
 
 ## Metrics
 
