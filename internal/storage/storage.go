@@ -5,7 +5,6 @@ import (
 	"embed"
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -217,6 +216,27 @@ func (s *Storage) LoadTestRuns(ctx context.Context, tsrID int) ([]model.TestRun,
 	return runs, nil
 }
 
+func (s *Storage) LoadTestRun(ctx context.Context, tsrID int, testName string) (model.TestRun, error) {
+	r, err := s.db.NamedQueryContext(ctx, `SELECT 
+		testName, passed, skipped, logs, startTime, endTime
+		FROM TestRun WHERE suiteRunId=:suiteRunId and testName=:testName`,
+		map[string]any{
+			"suiteRunId": tsrID,
+			"testName":   testName,
+		},
+	)
+	if err != nil {
+		return model.TestRun{}, err
+	}
+	defer r.Close()
+
+	if !r.Next() {
+		return model.TestRun{}, model.NotFoundError{}
+	}
+
+	return scanTestRun(r)
+}
+
 func (s *Storage) UpsertTestRun(ctx context.Context, tsrID int, tr model.TestRun) error {
 	_, err := s.db.NamedExecContext(ctx, `INSERT INTO TestRun
 	(suiteRunId, testName, passed, skipped, logs, startTime, endTime) VALUES
@@ -269,6 +289,8 @@ func scanTestRun(r *sqlx.Rows) (model.TestRun, error) {
 		return model.TestRun{}, fmt.Errorf("parsing end time: %w", err)
 	}
 
+	tr.DurationInMS = tr.End.Sub(tr.Start).Milliseconds()
+
 	return tr, nil
 }
 
@@ -305,6 +327,8 @@ func scanTestSuiteRun(r *sqlx.Rows) (model.TestSuiteRun, error) {
 	if tsr.Scheduled, err = parseDate(scheduled); err != nil {
 		return model.TestSuiteRun{}, fmt.Errorf("parsing scheduled time: %w", err)
 	}
+
+	tsr.DurationInMS = tsr.End.Sub(tsr.Start).Milliseconds()
 
 	if tsr.TestFilter != "" {
 		tsr.TestFilterRegex, err = regexp.Compile(tsr.TestFilter)

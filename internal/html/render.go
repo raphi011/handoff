@@ -9,13 +9,16 @@ import (
 	"github.com/raphi011/handoff/internal/model"
 )
 
-//go:embed testrun.tmpl
+//go:embed test-run.tmpl
 var testRunTemplate string
 
-//go:embed testruns.tmpl
-var testRunsTemplate string
+//go:embed test-suite-run.tmpl
+var testSuiteRunTemplate string
 
-//go:embed testsuites.tmpl
+//go:embed test-suite-runs.tmpl
+var testSuiteRunsTemplate string
+
+//go:embed test-suites.tmpl
 var testSuitesTemplate string
 
 var templatesByName map[string]*template.Template
@@ -28,7 +31,8 @@ func init() {
 		template string
 	}{
 		{name: "test-run", template: testRunTemplate},
-		{name: "test-runs", template: testRunsTemplate},
+		{name: "test-suite-run", template: testSuiteRunTemplate},
+		{name: "test-suite-runs", template: testSuiteRunsTemplate},
 		{name: "test-suites", template: testSuitesTemplate},
 	}
 
@@ -42,12 +46,16 @@ func init() {
 	}
 }
 
-func RenderTestRun(testRun model.TestSuiteRun, w io.Writer) error {
+func RenderTestRun(testRun model.TestRun, w io.Writer) error {
 	return templatesByName["test-run"].Execute(w, testRun)
 }
 
-func RenderTestRuns(testRuns []model.TestSuiteRun, w io.Writer) error {
-	return templatesByName["test-runs"].Execute(w, testRuns)
+func RenderTestSuiteRun(testRun model.TestSuiteRun, w io.Writer) error {
+	return templatesByName["test-suite-run"].Execute(w, testRun)
+}
+
+func RenderTestSuiteRuns(testRuns []model.TestSuiteRun, w io.Writer) error {
+	return templatesByName["test-suite-runs"].Execute(w, testRuns)
 }
 
 func RenderTestSuites(testSuites []model.TestSuite, w io.Writer) error {

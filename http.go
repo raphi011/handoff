@@ -39,6 +39,7 @@ func (s *Handoff) runHTTP() error {
 	router.GET("/suites", s.getTestSuites)
 	router.GET("/suites/:suite-name/runs", s.getTestSuiteRuns)
 	router.GET("/suites/:suite-name/runs/:run-id", s.getTestSuiteRun)
+	router.GET("/suites/:suite-name/runs/:run-id/test/:test-name", s.getTestRunResult)
 
 	slog.Info("Starting http server", "port", s.port)
 
@@ -46,7 +47,7 @@ func (s *Handoff) runHTTP() error {
 }
 
 func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	suite, err := s.getSuite(r, p)
+	suite, err := s.loadTestSuite(r, p)
 	if err != nil {
 		s.httpError(w, err)
 		return
@@ -91,7 +92,17 @@ func (s *Handoff) getTestSuites(w http.ResponseWriter, r *http.Request, p httpro
 }
 
 func (s *Handoff) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	testRun, err := s.getTestRun(r.Context(), p)
+	testRun, err := s.loadTestSuiteRun(r.Context(), p)
+	if err != nil {
+		s.httpError(w, err)
+		return
+	}
+
+	s.writeResponse(w, r, testRun)
+}
+
+func (s *Handoff) getTestRunResult(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	testRun, err := s.loadTestRun(r.Context(), p)
 	if err != nil {
 		s.httpError(w, err)
 		return
@@ -109,7 +120,7 @@ func (s *Handoff) getReady(w http.ResponseWriter, r *http.Request, p httprouter.
 }
 
 func (s *Handoff) getTestSuiteRuns(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	testRuns, err := s.getTestRuns(r.Context(), p)
+	testRuns, err := s.loadTestSuiteRuns(r.Context(), p)
 	if err != nil {
 		s.httpError(w, err)
 		return
@@ -127,10 +138,12 @@ func (s *Handoff) writeResponse(w http.ResponseWriter, r *http.Request, body any
 		w.Header().Add("Content-Type", "text/html")
 
 		switch t := body.(type) {
-		case model.TestSuiteRun:
+		case model.TestRun:
 			html.RenderTestRun(t, w)
+		case model.TestSuiteRun:
+			html.RenderTestSuiteRun(t, w)
 		case []model.TestSuiteRun:
-			html.RenderTestRuns(t, w)
+			html.RenderTestSuiteRuns(t, w)
 		case []model.TestSuite:
 			html.RenderTestSuites(t, w)
 		default:
@@ -156,7 +169,7 @@ func headerAcceptsType(h http.Header, mimeType string) bool {
 	return strings.Contains(accept, mimeType)
 }
 
-func (s *Handoff) getSuite(r *http.Request, p httprouter.Params) (model.TestSuite, error) {
+func (s *Handoff) loadTestSuite(r *http.Request, p httprouter.Params) (model.TestSuite, error) {
 	suiteName := p.ByName("suite-name")
 
 	ts, ok := s.readOnlyTestSuites[suiteName]
@@ -168,30 +181,48 @@ func (s *Handoff) getSuite(r *http.Request, p httprouter.Params) (model.TestSuit
 	return ts, nil
 }
 
-func (s *Handoff) getTestRun(ctx context.Context, p httprouter.Params) (model.TestSuiteRun, error) {
+func (s *Handoff) loadTestRun(ctx context.Context, p httprouter.Params) (model.TestRun, error) {
+	// TODO: not needed ATM because the run id is global and not per test suite
+	// this should be per suite in the future
+	// suiteName := p.ByName("suite-name")
+	testName := p.ByName("test-name")
+	runID, err := strconv.Atoi(p.ByName("run-id"))
+	if err != nil {
+		return model.TestRun{}, malformedRequestError{param: "run-id", reason: "must be an integer"}
+	}
+
+	tr, err := s.storage.LoadTestRun(ctx, runID, testName)
+	if err != nil {
+		return model.TestRun{}, err
+	}
+
+	return tr, nil
+}
+
+func (s *Handoff) loadTestSuiteRuns(ctx context.Context, p httprouter.Params) ([]model.TestSuiteRun, error) {
+	suiteName := p.ByName("suite-name")
+
+	return s.storage.LoadTestSuiteRunsByName(ctx, suiteName)
+}
+
+func (s *Handoff) loadTestSuiteRun(ctx context.Context, p httprouter.Params) (model.TestSuiteRun, error) {
 	suiteName := p.ByName("suite-name")
 	runID, err := strconv.Atoi(p.ByName("run-id"))
 	if err != nil {
 		return model.TestSuiteRun{}, malformedRequestError{param: "run-id", reason: "must be an integer"}
 	}
 
-	tr, err := s.storage.LoadTestSuiteRun(ctx, suiteName, int(runID))
+	tr, err := s.storage.LoadTestSuiteRun(ctx, suiteName, runID)
 	if err != nil {
 		return model.TestSuiteRun{}, err
 	}
 
-	tr.TestResults, err = s.storage.LoadTestRuns(ctx, tr.ID)
+	tr.TestResults, err = s.storage.LoadTestRuns(ctx, runID)
 	if err != nil {
 		return model.TestSuiteRun{}, err
 	}
 
 	return tr, nil
-}
-
-func (s *Handoff) getTestRuns(ctx context.Context, p httprouter.Params) ([]model.TestSuiteRun, error) {
-	suiteName := p.ByName("suite-name")
-
-	return s.storage.LoadTestSuiteRunsByName(ctx, suiteName)
 }
 
 func (s *Handoff) httpError(w http.ResponseWriter, err error) {
