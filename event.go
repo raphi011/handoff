@@ -40,9 +40,9 @@ func (e testRunStartedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 	ts.SuiteName = e.suiteName
 	ts.TestResults = []model.TestRun{}
 	ts.Scheduled = e.scheduled
-	ts.SetupLogs = []string{}
 	ts.TestFilterRegex = e.testFilter
 	ts.Tests = e.tests
+	ts.Result = model.ResultPending
 
 	if e.testFilter != nil {
 		ts.TestFilter = e.testFilter.String()
@@ -101,7 +101,7 @@ type testFinishedEvent struct {
 	testName string
 	recovery any
 	passed   bool
-	logs     []string
+	logs     string
 }
 
 func (e testFinishedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
@@ -111,7 +111,7 @@ func (e testFinishedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 	if e.recovery != nil && !e.skipped {
 		if _, ok := e.recovery.(failTestErr); !ok {
 			// this is an unexpected panic (does not originate from handoff)
-			logs = append(logs, fmt.Sprintf("%v", e.recovery))
+			logs += fmt.Sprintf("%v\n", e.recovery)
 		}
 
 		passed = false

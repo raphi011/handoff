@@ -39,7 +39,7 @@ type TestSuiteRun struct {
 	// DurationInMS is the time it took the entire test run to complete (end-start).
 	DurationInMS int64 `json:"durationInMs"`
 	// SetupLogs are the logs that are written during the setup phase.
-	SetupLogs []string `json:"setupLogs"`
+	SetupLogs string `json:"setupLogs"`
 	// TriggeredBy denotes the origin of the test run, e.g. scheduled or via http call.
 	TriggeredBy string `json:"triggeredBy"`
 }
@@ -51,7 +51,7 @@ type TestRun struct {
 	// Skipped denotes if the test was skipped (e.g. by calling t.Skip()).
 	Skipped bool `json:"skipped"`
 	// Logs contains log messages written by the test itself.
-	Logs []string `json:"logs"`
+	Logs string `json:"logs"`
 	// Start marks the start time of the test run.
 	Start time.Time `json:"start"`
 	// End marks the end time of the test run.
@@ -69,6 +69,7 @@ type TestRun struct {
 type Result string
 
 const (
+	ResultPending     Result = "pending"
 	ResultSkipped     Result = "skipped"
 	ResultPassed      Result = "passed"
 	ResultFailed      Result = "failed"

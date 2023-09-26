@@ -11,7 +11,7 @@ var _ TB = &t{}
 
 type t struct {
 	name       string
-	logs       []string
+	logs       string
 	passed     bool
 	skipped    bool
 	runContext map[string]any
@@ -56,11 +56,11 @@ func (t *t) Fatalf(format string, args ...any) {
 func (t *t) Helper() {}
 
 func (t *t) Log(args ...any) {
-	t.logs = append(t.logs, fmt.Sprint(args...))
+	t.logs += fmt.Sprint(args...) + "\n"
 }
 
 func (t *t) Logf(format string, args ...any) {
-	t.logs = append(t.logs, fmt.Sprintf(format, args...))
+	t.logs += fmt.Sprintf(format, args...) + "\n"
 }
 
 func (t *t) Name() string {

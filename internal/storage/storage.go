@@ -101,11 +101,6 @@ func migrateDB(db *sqlx.DB) error {
 }
 
 func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) (int, error) {
-	logs := ""
-	if len(tsr.SetupLogs) > 0 {
-		logs = strings.Join(tsr.SetupLogs, "\n")
-	}
-
 	r, err := s.db.NamedExecContext(ctx, `INSERT INTO TestSuiteRun 
 	(suiteName, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy) VALUES
 	(:suiteName, :result, :testFilter, :total, :passed, :skipped, :failed, :scheduledTime, :startTime, :endTime, :setupLogs, :triggeredBy)`,
@@ -120,7 +115,7 @@ func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) 
 			"scheduledTime": timeFormat(tsr.Scheduled),
 			"startTime":     timeFormat(tsr.Start),
 			"endTime":       timeFormat(tsr.End),
-			"setupLogs":     logs,
+			"setupLogs":     tsr.SetupLogs,
 			"triggeredBy":   tsr.TriggeredBy,
 		})
 	if err != nil {
@@ -136,11 +131,6 @@ func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) 
 }
 
 func (s *Storage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) error {
-	logs := ""
-	if len(tsr.SetupLogs) > 0 {
-		logs = strings.Join(tsr.SetupLogs, "\n")
-	}
-
 	_, err := s.db.NamedExecContext(ctx, `UPDATE TestSuiteRun SET
 	result=:result, passed=:passed, skipped=:skipped, failed=:failed, startTime=:startTime, endTime=:endTime, setupLogs=:setupLogs
 	where id = :id and suiteName = :suiteName`,
@@ -151,7 +141,7 @@ func (s *Storage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun
 			"failed":    tsr.Failed,
 			"startTime": timeFormat(tsr.Start),
 			"endTime":   timeFormat(tsr.End),
-			"setupLogs": logs,
+			"setupLogs": tsr.SetupLogs,
 			"id":        tsr.ID,
 			"suiteName": tsr.SuiteName,
 		})
@@ -228,11 +218,6 @@ func (s *Storage) LoadTestRuns(ctx context.Context, tsrID int) ([]model.TestRun,
 }
 
 func (s *Storage) UpsertTestRun(ctx context.Context, tsrID int, tr model.TestRun) error {
-	logs := ""
-	if len(tr.Logs) > 0 {
-		logs = strings.Join(tr.Logs, "\n")
-	}
-
 	_, err := s.db.NamedExecContext(ctx, `INSERT INTO TestRun
 	(suiteRunId, testName, passed, skipped, logs, startTime, endTime) VALUES
 	(:suiteRunId, :testName, :passed, :skipped, :logs, :startTime, :endTime)
@@ -244,7 +229,7 @@ func (s *Storage) UpsertTestRun(ctx context.Context, tsrID int, tr model.TestRun
 			"testName":   tr.Name,
 			"passed":     tr.Passed,
 			"skipped":    tr.Skipped,
-			"logs":       logs,
+			"logs":       tr.Logs,
 			"startTime":  timeFormat(tr.Start),
 			"endTime":    timeFormat(tr.End),
 		})
@@ -265,21 +250,17 @@ func scanTestRun(r *sqlx.Rows) (model.TestRun, error) {
 
 	var start, end string
 
-	var logs string
-
 	err := r.Scan(
 		&tr.Name,
 		&tr.Passed,
 		&tr.Skipped,
-		&logs,
+		&tr.Logs,
 		&start,
 		&end,
 	)
 	if err != nil {
 		return model.TestRun{}, fmt.Errorf("scanning test suite run: %w", err)
 	}
-
-	tr.Logs = strings.Split(logs, "\n")
 
 	if tr.Start, err = parseDate(start); err != nil {
 		return model.TestRun{}, fmt.Errorf("parsing start time: %w", err)
@@ -296,8 +277,6 @@ func scanTestSuiteRun(r *sqlx.Rows) (model.TestSuiteRun, error) {
 
 	var start, end, scheduled string
 
-	var logs string
-
 	err := r.Scan(
 		&tsr.ID,
 		&tsr.SuiteName,
@@ -310,14 +289,12 @@ func scanTestSuiteRun(r *sqlx.Rows) (model.TestSuiteRun, error) {
 		&scheduled,
 		&start,
 		&end,
-		&logs,
+		&tsr.SetupLogs,
 		&tsr.TriggeredBy,
 	)
 	if err != nil {
 		return model.TestSuiteRun{}, fmt.Errorf("scanning test suite run: %w", err)
 	}
-
-	tsr.SetupLogs = strings.Split(logs, "\n")
 
 	if tsr.Start, err = parseDate(start); err != nil {
 		return model.TestSuiteRun{}, fmt.Errorf("parsing start time: %w", err)

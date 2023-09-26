@@ -31,7 +31,7 @@ func TestMigration(t *testing.T) {
 		Start:        now,
 		End:          time.Time{},
 		DurationInMS: 0,
-		SetupLogs:    []string{"Log 1", "Log 2"},
+		SetupLogs:    "Log 1\nLog 2",
 		TriggeredBy:  "web",
 	})
 	if err != nil {
@@ -75,7 +75,7 @@ func TestUpsertTestRun(t *testing.T) {
 		Start:        now,
 		End:          time.Time{},
 		DurationInMS: 0,
-		SetupLogs:    []string{"Log 1", "Log 2"},
+		SetupLogs:    "Log 1",
 		TriggeredBy:  "web",
 	})
 	if err != nil {

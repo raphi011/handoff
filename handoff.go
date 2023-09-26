@@ -331,7 +331,6 @@ func (s *Handoff) executeTest(suite model.TestSuite, testRun model.TestSuiteRun,
 
 	t := t{
 		name:       name,
-		logs:       []string{},
 		passed:     true,
 		runContext: map[string]any{},
 	}
