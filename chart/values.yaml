@@ -1,5 +1,5 @@
 image:
-  repository: raphi011/handoff
+  repository: raphi011/handoff-example
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
@@ -13,7 +13,7 @@ serviceAccount:
   annotations: {}
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
-  name: ""
+  name: "handoff"
 
 podAnnotations: {}
 
@@ -32,7 +32,7 @@ securityContext:
 
 service:
   type: ClusterIP
-  port: 80
+  port: 1337
 
 resources:
   {}

@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: "{{ include "handoff.fullname" . }}-test-connection"
+  name: "{{ .Chart.Name }}-test-connection"
   labels:
     {{- include "handoff.labels" . | nindent 4 }}
   annotations:
