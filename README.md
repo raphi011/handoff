@@ -14,8 +14,10 @@ See [the example app](./cmd/example/main.go).
 - [ ] (Feature) Output go test json report
 - [ ] (Feature) Test run backoff on failures
 - [ ] (Feature) Configurable test run retention policy
-- [ ] (Feature) Soft test fails that don't fail the testsuite
+- [ ] (Feature) Soft test fails that don't fail the entire testsuite. This can be used to help with the chicken/egg problem when you add new tests that target a new service version that is not deployed yet.
 - [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
+- [ ] (Feature) Add test-suite labels (e.g. instead of "associated service", "team name" attributes)
+- [ ] (Feature) Add support for async plugins in case they need to do slow operations such as http calls
 - [ ] (Technical) Websocket that returns realtime test results (including test logs)
 - [ ] (Technical) Authenticated HTTP requests through TLS client certificates
 - [ ] (Technical) Continue test runs on service restart
@@ -38,7 +40,7 @@ See [the example app](./cmd/example/main.go).
 ## Potential features
 
 - [ ] (Feature) Create a helm chart that supports remote test debugging through dlv
-- [ ] (Feature) Support running tests in languages other than go and collect test results
+- [ ] (Feature) Support running tests in languages other than go
 - [ ] (Feature) Flaky test detection
 - [ ] (Feature) k8s operator / CRDs to configure test runs & schedules
 
