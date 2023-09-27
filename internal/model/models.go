@@ -42,6 +42,8 @@ type TestSuiteRun struct {
 	SetupLogs string `json:"setupLogs"`
 	// TriggeredBy denotes the origin of the test run, e.g. scheduled or via http call.
 	TriggeredBy string `json:"triggeredBy"`
+	// Environment is additional information on where the tests are run (e.g. cluster name).
+	Environment string `json:"environment"`
 }
 
 type TestRun struct {

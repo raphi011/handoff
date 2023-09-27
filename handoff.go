@@ -20,6 +20,9 @@ type Handoff struct {
 	port       int
 	serverMode bool
 
+	// environment is e.g. the cluster/platform the tests are run on.
+	// This is added to metrics and the testrun information.
+	environment string
 	plugins plugins
 
 	readOnlyTestSuites map[string]model.TestSuite
@@ -124,6 +127,7 @@ func (s *Handoff) parseFlags() {
 	var port = flag.Int("p", s.port, "port used by the server (server mode only)")
 	var serverMode = flag.Bool("s", s.serverMode, "enable server mode")
 	var listTestSuites = flag.Bool("l", false, "list all configured test suites and exit")
+	var environment = flag.String("e", "", "the environment where the tests are run")
 
 	flag.Parse()
 
@@ -133,6 +137,7 @@ func (s *Handoff) parseFlags() {
 
 	s.port = *port
 	s.serverMode = *serverMode
+	s.environment = *environment
 }
 
 func (s *Handoff) printTestSuites() {
@@ -205,9 +210,9 @@ func (s *Handoff) startSchedules() error {
 				scheduled:         time.Now(),
 				triggeredBy:       "scheduled",
 				tests:             len(ts.Tests),
+				environment:       s.environment,
 			}
 		})
-
 		if err != nil {
 			return fmt.Errorf("adding scheduled test suite run %q: %w", schedule.TestSuiteName, err)
 		}

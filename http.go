@@ -69,6 +69,7 @@ func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p ht
 		triggeredBy:       "http",
 		testFilter:        filter,
 		tests:             len(suite.Tests),
+		environment:       s.environment,
 	}
 
 	s.events <- event

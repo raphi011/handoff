@@ -1,6 +1,7 @@
 CREATE TABLE TestSuiteRun(
     id INTEGER PRIMARY KEY,
     suiteName TEXT NOT NULL,
+    environment TEXT NOT NULL,
     result TEXT,
     testFilter TEXT,
 

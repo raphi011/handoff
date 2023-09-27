@@ -33,6 +33,7 @@ type testRunStartedEvent struct {
 	triggeredBy string
 	testFilter  *regexp.Regexp
 	tests       int
+	environment string
 }
 
 func (e testRunStartedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
@@ -43,6 +44,7 @@ func (e testRunStartedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 	ts.TestFilterRegex = e.testFilter
 	ts.Tests = e.tests
 	ts.Result = model.ResultPending
+	ts.Environment = e.environment
 
 	if e.testFilter != nil {
 		ts.TestFilter = e.testFilter.String()

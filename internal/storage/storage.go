@@ -48,6 +48,10 @@ func New(dbFilename string) (*Storage, error) {
 	}, nil
 }
 
+func (s *Storage) Close() error {
+	return s.db.Close()
+}
+
 var pragma = []string{"busy_timeout(5000)", "journal_mode(WAL)", "foreign_keys(1)", "synchronous(normal)"}
 
 func connectionString(filename string) string {
@@ -101,10 +105,11 @@ func migrateDB(db *sqlx.DB) error {
 
 func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) (int, error) {
 	r, err := s.db.NamedExecContext(ctx, `INSERT INTO TestSuiteRun 
-	(suiteName, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy) VALUES
-	(:suiteName, :result, :testFilter, :total, :passed, :skipped, :failed, :scheduledTime, :startTime, :endTime, :setupLogs, :triggeredBy)`,
+	(suiteName, environment, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy) VALUES
+	(:suiteName, :environment, :result, :testFilter, :total, :passed, :skipped, :failed, :scheduledTime, :startTime, :endTime, :setupLogs, :triggeredBy)`,
 		map[string]any{
 			"suiteName":     tsr.SuiteName,
+			"environment":   tsr.Environment,
 			"result":        tsr.Result,
 			"testFilter":    tsr.TestFilter,
 			"total":         tsr.Tests,
@@ -150,7 +155,7 @@ func (s *Storage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun
 
 func (s *Storage) LoadTestSuiteRun(ctx context.Context, suiteName string, runID int) (model.TestSuiteRun, error) {
 	r, err := s.db.NamedQueryContext(ctx, `SELECT 
-	id, suiteName, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy
+	id, suiteName, environment, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy
 	FROM TestSuiteRun WHERE suiteName = :suiteName and id = :id`,
 		map[string]any{
 			"suiteName": suiteName,
@@ -171,7 +176,7 @@ func (s *Storage) LoadTestSuiteRun(ctx context.Context, suiteName string, runID 
 func (s *Storage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string) ([]model.TestSuiteRun, error) {
 	runs := []model.TestSuiteRun{}
 	r, err := s.db.NamedQueryContext(ctx, `SELECT 
-		id, suiteName, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy
+		id, suiteName, environment, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy
 		FROM TestSuiteRun WHERE suiteName = :suiteName`,
 		map[string]any{"suiteName": suiteName},
 	)
@@ -302,6 +307,7 @@ func scanTestSuiteRun(r *sqlx.Rows) (model.TestSuiteRun, error) {
 	err := r.Scan(
 		&tsr.ID,
 		&tsr.SuiteName,
+		&tsr.Environment,
 		&tsr.Result,
 		&tsr.TestFilter,
 		&tsr.Tests,
