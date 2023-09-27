@@ -85,7 +85,8 @@ func TestUpsertTestRun(t *testing.T) {
 	t.Logf("created testsuiterun with id %d", id)
 
 	tr := model.TestRun{
-		Name: "bla",
+		Name:   "bla",
+		Result: model.ResultPending,
 	}
 
 	err = s.UpsertTestRun(ctx, id, tr)
@@ -93,7 +94,7 @@ func TestUpsertTestRun(t *testing.T) {
 		t.Error(err)
 	}
 
-	tr.Passed = true
+	tr.Result = model.ResultPassed
 
 	err = s.UpsertTestRun(ctx, id, tr)
 	if err != nil {

@@ -200,7 +200,7 @@ func (s *Storage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string)
 func (s *Storage) LoadTestRuns(ctx context.Context, tsrID int) ([]model.TestRun, error) {
 	runs := []model.TestRun{}
 	r, err := s.db.NamedQueryContext(ctx, `SELECT 
-		testName, passed, skipped, logs, startTime, endTime
+		testName, result, logs, startTime, endTime
 		FROM TestRun WHERE suiteRunId=:suiteRunId`,
 		map[string]any{"suiteRunId": tsrID},
 	)
@@ -223,7 +223,7 @@ func (s *Storage) LoadTestRuns(ctx context.Context, tsrID int) ([]model.TestRun,
 
 func (s *Storage) LoadTestRun(ctx context.Context, tsrID int, testName string) (model.TestRun, error) {
 	r, err := s.db.NamedQueryContext(ctx, `SELECT 
-		testName, passed, skipped, logs, startTime, endTime
+		testName, result, logs, startTime, endTime
 		FROM TestRun WHERE suiteRunId=:suiteRunId and testName=:testName`,
 		map[string]any{
 			"suiteRunId": tsrID,
@@ -244,16 +244,15 @@ func (s *Storage) LoadTestRun(ctx context.Context, tsrID int, testName string) (
 
 func (s *Storage) UpsertTestRun(ctx context.Context, tsrID int, tr model.TestRun) error {
 	_, err := s.db.NamedExecContext(ctx, `INSERT INTO TestRun
-	(suiteRunId, testName, passed, skipped, logs, startTime, endTime) VALUES
-	(:suiteRunId, :testName, :passed, :skipped, :logs, :startTime, :endTime)
+	(suiteRunId, testName, result, logs, startTime, endTime) VALUES
+	(:suiteRunId, :testName, :result, :logs, :startTime, :endTime)
 	ON CONFLICT(suiteRunID, testName) 
 	DO UPDATE SET 
-	passed=:passed, skipped=:skipped, logs=:logs, startTime=:startTime, endTime=:endTime`,
+	result=:result, logs=:logs, startTime=:startTime, endTime=:endTime`,
 		map[string]any{
 			"suiteRunId": tsrID,
 			"testName":   tr.Name,
-			"passed":     tr.Passed,
-			"skipped":    tr.Skipped,
+			"result":     tr.Result,
 			"logs":       tr.Logs,
 			"startTime":  timeFormat(tr.Start),
 			"endTime":    timeFormat(tr.End),
@@ -277,8 +276,7 @@ func scanTestRun(r *sqlx.Rows) (model.TestRun, error) {
 
 	err := r.Scan(
 		&tr.Name,
-		&tr.Passed,
-		&tr.Skipped,
+		&tr.Result,
 		&tr.Logs,
 		&start,
 		&end,

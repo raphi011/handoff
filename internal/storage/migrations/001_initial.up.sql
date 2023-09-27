@@ -23,8 +23,7 @@ CREATE TABLE TestSuiteRun(
 CREATE TABLE TestRun(
     suiteRunId INTEGER NOT NULL,
     testName TEXT NOT NULL,
-    passed INTEGER NOT NULL, 
-    skipped INTEGER NOT NULL,
+    result TEXT NOT NULL, 
 
     logs TEXT,
 

@@ -12,8 +12,7 @@ var _ TB = &t{}
 type t struct {
 	name       string
 	logs       string
-	passed     bool
-	skipped    bool
+	result     model.Result
 	runContext map[string]any
 }
 
@@ -21,26 +20,26 @@ func (t *t) Cleanup(func()) {
 }
 
 func (t *t) Error(args ...any) {
-	t.passed = false
+	t.result = model.ResultFailed
 	t.Log(args...)
 }
 
 func (t *t) Errorf(format string, args ...any) {
-	t.passed = false
+	t.result = model.ResultFailed
 	t.Logf(format, args...)
 }
 
 func (t *t) Fail() {
-	t.passed = false
+	t.result = model.ResultFailed
 }
 
 func (t *t) FailNow() {
-	t.passed = false
+	t.result = model.ResultFailed
 	panic(failTestErr{})
 }
 
 func (t *t) Failed() bool {
-	return t.passed
+	return t.result == model.ResultFailed
 }
 
 func (t *t) Fatal(args ...any) {
@@ -76,7 +75,7 @@ func (t *t) Skip(args ...any) {
 }
 
 func (t *t) SkipNow() {
-	t.skipped = true
+	t.result = model.ResultSkipped
 	panic(skipTestErr{})
 }
 
@@ -86,7 +85,7 @@ func (t *t) Skipf(format string, args ...any) {
 }
 
 func (t *t) Skipped() bool {
-	return t.skipped
+	return t.result == model.ResultSkipped
 }
 
 func (t *t) TempDir() string {
@@ -98,13 +97,11 @@ func (t *t) SetContext(key string, value any) {
 }
 
 func (t *t) Result() model.Result {
-	if t.skipped {
-		return model.ResultSkipped
-	} else if t.passed {
+	if t.result == "" {
 		return model.ResultPassed
 	}
 
-	return model.ResultFailed
+	return t.result
 }
 
 // skipTestErr is passed to panic() to signal

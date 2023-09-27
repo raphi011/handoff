@@ -15,7 +15,7 @@
       {{ range .TestResults }}
          <tr>
            <td><a href="/suites/{{ $.SuiteName }}/runs/{{ $.ID }}/test/{{ .Name }}">{{ .Name }}</a></td>
-           <td>{{ if .Passed }}✅{{ else }}❌{{ end }}</td>
+           <td>{{ if eq .Result "passed" }}✅{{ else }}❌{{ end }}</td>
            <td style="text-align: right">{{ .DurationInMS }}ms</td>
          </tr>
       {{ end }}

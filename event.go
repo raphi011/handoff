@@ -99,39 +99,38 @@ type testFinishedEvent struct {
 	testRunIdentifier
 	start    time.Time
 	end      time.Time
-	skipped  bool
+	result   model.Result
 	testName string
 	recovery any
-	passed   bool
 	logs     string
 }
 
 func (e testFinishedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
-	passed := e.passed
 	logs := e.logs
 
-	if e.recovery != nil && !e.skipped {
+	result := e.result
+
+	if e.recovery != nil && e.result != model.ResultSkipped {
 		if _, ok := e.recovery.(failTestErr); !ok {
 			// this is an unexpected panic (does not originate from handoff)
 			logs += fmt.Sprintf("%v\n", e.recovery)
+			result = model.ResultFailed
 		}
-
-		passed = false
 	}
 
-	if e.skipped {
+	switch e.result {
+	case model.ResultSkipped:
 		ts.Skipped++
-	} else if passed {
+	case model.ResultPassed:
 		ts.Passed++
-	} else {
+	case model.ResultFailed:
 		ts.Failed++
 	}
 
 	ts.TestResults = append(ts.TestResults, model.TestRun{
 		Name:         e.testName,
-		Passed:       passed,
+		Result:       result,
 		Logs:         logs,
-		Skipped:      e.skipped,
 		Start:        e.start,
 		End:          e.end,
 		DurationInMS: e.end.Sub(e.start).Milliseconds(),

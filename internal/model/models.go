@@ -15,7 +15,7 @@ type TestSuiteRun struct {
 	SuiteName string `json:"suiteName"`
 	// TestResults contains the detailed test results of each test.
 	TestResults []TestRun `json:"testResults"`
-	// Result is the outcome of the entire test run.
+	// Result is the outcome of the entire test suite run.
 	Result Result `json:"result"`
 	// TestFilter filters out a subset of the tests and skips the
 	// remaining ones (not implemented yet).
@@ -48,10 +48,8 @@ type TestSuiteRun struct {
 
 type TestRun struct {
 	Name string `json:"name"`
-	// Passed denotes if the test has passed.
-	Passed bool `json:"passed"`
-	// Skipped denotes if the test was skipped (e.g. by calling t.Skip()).
-	Skipped bool `json:"skipped"`
+	// Result is the outcome of the test run.
+	Result Result `json:"result"`
 	// Logs contains log messages written by the test itself.
 	Logs string `json:"logs"`
 	// Start marks the start time of the test run.
