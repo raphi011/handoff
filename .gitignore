@@ -1,3 +1,6 @@
 __debug_bin
 example
 .DS_STORE
+
+*.db
+example
