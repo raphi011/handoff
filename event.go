@@ -32,7 +32,13 @@ type testRunStartedEvent struct {
 }
 
 func (e testRunStartedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
-	ts.Start = e.start
+	timeNotSet := time.Time{}
+
+	// only set start time if it wasn't set before. This
+	// is possible if we resume a paused test suite run.
+	if ts.Start == timeNotSet {
+		ts.Start = e.start
+	}
 
 	return ts
 }

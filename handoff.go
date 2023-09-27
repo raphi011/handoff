@@ -405,14 +405,6 @@ func (s *Handoff) runTestSuite(suite model.TestSuite, testSuiteRun model.TestSui
 	}
 
 	testSuitesRunning := metric.TestSuitesRunning.WithLabelValues(suite.AssociatedService, suite.Name)
-
-	start := time.Now()
-
-	timeNotSet := time.Time{}
-	if testSuiteRun.Start == timeNotSet {
-		testSuiteRun.Start = start
-	}
-
 	testSuitesRunning.Inc()
 	defer func() {
 		testSuitesRunning.Dec()
@@ -441,6 +433,7 @@ func (s *Handoff) runTestSuite(suite model.TestSuite, testSuiteRun model.TestSui
 		return false
 	}
 
+	// todo: it would be better to get the # of skipped tests from the test results
 	skipped := testSuiteRun.Skipped
 
 	filter := testSuiteRun.TestFilterRegex
