@@ -23,7 +23,7 @@ func main() {
 				Testify,
 			},
 		}),
-		handoff.WithScheduledRun("my-app", "@every 5s"),
+		handoff.WithScheduledRun(handoff.ScheduledRun{TestSuiteName: "my-app", Schedule: "@every 5s"}),
 		handoff.WithPlugin(&plugin.ElasticSearchPlugin{}),
 		handoff.WithServerPort(1337),
 	)

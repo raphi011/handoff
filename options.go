@@ -18,9 +18,9 @@ func WithServerPort(port int) option {
 
 // WithScheduledRun schedules a TestSuite to run at certain intervals.
 // Ignored in CLI mode.
-func WithScheduledRun(name, schedule string) option {
+func WithScheduledRun(sr ScheduledRun) option {
 	return func(s *Handoff) {
-		s.schedules = append(s.schedules, scheduledRun{TestSuiteName: name, Schedule: schedule})
+		s.schedules = append(s.schedules, sr)
 	}
 }
 
