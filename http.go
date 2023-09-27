@@ -43,7 +43,13 @@ func (s *Handoff) runHTTP() error {
 
 	slog.Info("Starting http server", "port", s.port)
 
-	return http.ListenAndServe(fmt.Sprintf(":%d", s.port), router)
+	s.httpServer = &http.Server{
+		Handler: router,
+		Addr:    fmt.Sprintf(":%d", s.port),
+		// TODO: set reasonable timeouts
+	}
+
+	return s.httpServer.ListenAndServe()
 }
 
 func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {

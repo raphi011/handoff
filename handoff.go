@@ -4,8 +4,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
+	"os/signal"
+	"regexp"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/raphi011/handoff/internal/metric"
@@ -17,18 +22,34 @@ import (
 )
 
 type Handoff struct {
-	port       int
+	// port for the web api
+	port int
+	// enable or disable server mode
 	serverMode bool
+	// location of the sqlite database file, if empty we default
+	// to an in-memory database.
+	databaseFilePath string
 
 	// environment is e.g. the cluster/platform the tests are run on.
 	// This is added to metrics and the testrun information.
 	environment string
+
+	// configured plugins
 	plugins plugins
 
+	// a map of all testsuites that must not be modified after
+	// initialisation.
 	readOnlyTestSuites map[string]model.TestSuite
 
-	schedules []scheduledRun
-	cron      *cron.Cron
+	// scheduled runs configured by the user
+	schedules []ScheduledRun
+
+	// cron object used for scheduled runs
+	cron *cron.Cron
+
+	runningTests sync.WaitGroup
+
+	httpServer *http.Server
 
 	storage *storage.Storage
 
@@ -58,7 +79,6 @@ type Plugin interface {
 }
 
 // Reexport to allow library users to reference these types
-
 type TestFunc = model.TestFunc
 type TB = model.TB
 
@@ -103,7 +123,10 @@ func (s *Handoff) Run() error {
 	}
 
 	if s.serverMode {
-		db, err := storage.New("")
+		exit := make(chan os.Signal, 1)
+		signal.Notify(exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+		db, err := storage.New(s.databaseFilePath)
 		if err != nil {
 			return fmt.Errorf("init storage: %w", err)
 		}
@@ -114,19 +137,74 @@ func (s *Handoff) Run() error {
 		}
 
 		go s.eventLoop()
+		go s.runHTTP()
 
-		return s.runHTTP()
+		signal := <-exit
+
+		s.gracefulShutdown(signal)
+	} else {
+		fmt.Println("CLI Mode, WIP")
 	}
 
-	fmt.Println("CLI Mode, WIP")
-
 	return nil
+}
+
+func (s *Handoff) gracefulShutdown(signal os.Signal) {
+	slog.Info("Received signal, shutting down", "signal", signal.String())
+	shutdownTimeoutCtx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+	httpStopCtx, cancelHttp := context.WithCancel(context.Background())
+	defer cancelHttp()
+
+	go func() {
+		err := s.httpServer.Shutdown(shutdownTimeoutCtx)
+
+		if err == nil {
+			cancelHttp()
+		} else {
+			slog.Warn("Http listener did not shutdown successfully", "error", err)
+		}
+	}()
+
+	cronStopCtx := s.cron.Stop()
+
+	select {
+	case <-shutdownTimeoutCtx.Done():
+		slog.Warn("Graceful shutdown timed out, forcing exit")
+		return
+	case <-cronStopCtx.Done():
+		slog.Info("Scheduled tests stopped successfully")
+	}
+
+	select {
+	case <-shutdownTimeoutCtx.Done():
+		slog.Warn("Graceful shutdown timed out, forcing exit")
+		return
+	case <-httpStopCtx.Done():
+		slog.Info("Http listener stopped successfully")
+	}
+
+	// after the scheduled jobs and the http listener is shutdown no more writes
+	// ot the events channel should occur therefor it should be safe to close it.
+	close(s.events)
+
+	slog.Info("Waiting for running tests to finish")
+	s.runningTests.Wait()
+
+	slog.Info("Closing the database connection(s)")
+	if err := s.storage.Close(); err != nil {
+		slog.Warn("Closing db connection failed", "error", err)
+		return
+	}
+
+	slog.Info("Shutdown successfull")
 }
 
 func (s *Handoff) parseFlags() {
 	var port = flag.Int("p", s.port, "port used by the server (server mode only)")
 	var serverMode = flag.Bool("s", s.serverMode, "enable server mode")
 	var listTestSuites = flag.Bool("l", false, "list all configured test suites and exit")
+	var databaseFile = flag.String("d", "handoff.db", "database file location")
 	var environment = flag.String("e", "", "the environment where the tests are run")
 
 	flag.Parse()
@@ -137,6 +215,7 @@ func (s *Handoff) parseFlags() {
 
 	s.port = *port
 	s.serverMode = *serverMode
+	s.databaseFilePath = *databaseFile
 	s.environment = *environment
 }
 
@@ -199,6 +278,14 @@ func (s *Handoff) startSchedules() error {
 	for i := range s.schedules {
 		schedule := s.schedules[i]
 
+		if schedule.TestFilter != "" {
+			var err error
+			schedule.testFilter, err = regexp.Compile(schedule.TestFilter)
+			if err != nil {
+				return fmt.Errorf("could not compile scheduled run test filter %s: %w", schedule.TestFilter, err)
+			}
+		}
+
 		ts, ok := s.readOnlyTestSuites[schedule.TestSuiteName]
 		if !ok {
 			return fmt.Errorf("starting scheduled test suite run: test suite %q not found", schedule.TestSuiteName)
@@ -211,6 +298,7 @@ func (s *Handoff) startSchedules() error {
 				triggeredBy:       "scheduled",
 				tests:             len(ts.Tests),
 				environment:       s.environment,
+				testFilter:        schedule.testFilter,
 			}
 		})
 		if err != nil {
@@ -366,6 +454,8 @@ func (s *Handoff) executeTest(suite model.TestSuite, testRun model.TestSuiteRun,
 		s.notifyTestFinished(suite, testRun, name, t.runContext)
 	}()
 
+	s.runningTests.Add(1)
+	defer s.runningTests.Done()
 	test(&t)
 }
 
