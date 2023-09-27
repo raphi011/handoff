@@ -36,7 +36,7 @@ type TestSuiteRun struct {
 	Start time.Time `json:"start"`
 	// End is the time when the test run finished executing.
 	End time.Time `json:"end"`
-	// DurationInMS is the time it took the entire test run to complete (end-start).
+	// DurationInMS is the test run execution times summed up.
 	DurationInMS int64 `json:"durationInMs"`
 	// SetupLogs are the logs that are written during the setup phase.
 	SetupLogs string `json:"setupLogs"`

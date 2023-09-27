@@ -52,6 +52,24 @@ func (s *Handoff) runHTTP() error {
 	return s.httpServer.ListenAndServe()
 }
 
+func (s *Handoff) stopHTTP() context.Context {
+	httpStopCtx, cancelHttp := context.WithCancel(context.Background())
+
+	go func() {
+		timeoutCtx, cancelTimeout := context.WithTimeout(context.Background(), time.Second*30)
+		defer cancelTimeout()
+		defer cancelHttp()
+
+		err := s.httpServer.Shutdown(timeoutCtx)
+
+		if err != nil {
+			slog.Warn("Http listener shutdown returned an error", "error", err)
+		}
+	}()
+
+	return httpStopCtx
+}
+
 func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	suite, err := s.loadTestSuite(r, p)
 	if err != nil {
@@ -69,21 +87,13 @@ func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p ht
 		}
 	}
 
-	event := testRunStartedEvent{
-		testRunIdentifier: testRunIdentifier{suiteName: suite.Name},
-		scheduled:         time.Now(),
-		triggeredBy:       "http",
-		testFilter:        filter,
-		tests:             len(suite.Tests),
-		environment:       s.environment,
+	tsr, err := s.startNewTestSuiteRun(suite, "api", filter)
+	if err != nil {
+		s.httpError(w, err)
 	}
 
-	s.events <- event
-
-	tr := event.Apply(model.TestSuiteRun{})
-
 	// TODO: set status created code
-	s.writeResponse(w, r, tr)
+	s.writeResponse(w, r, tsr)
 }
 
 func (s *Handoff) getTestSuites(w http.ResponseWriter, r *http.Request, p httprouter.Params) {

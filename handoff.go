@@ -34,8 +34,15 @@ type Handoff struct {
 	// This is added to metrics and the testrun information.
 	environment string
 
+	// Max concurrent test suite runs (this doesn't work yet).
+	maxConcurrentRuns int
+
 	// configured plugins
 	plugins plugins
+
+	// if closed the eventloop will stop
+	stop    chan any
+	stopped chan any
 
 	// a map of all testsuites that must not be modified after
 	// initialisation.
@@ -47,7 +54,7 @@ type Handoff struct {
 	// cron object used for scheduled runs
 	cron *cron.Cron
 
-	runningTests sync.WaitGroup
+	runningTestSuites sync.WaitGroup
 
 	httpServer *http.Server
 
@@ -105,7 +112,8 @@ func New(opts ...option) *Handoff {
 			testSuiteFinished: []plugin.TestSuiteFinishedListener{},
 			testSuiteStarted:  []plugin.TestSuiteStartedListener{},
 		},
-		events: make(chan event, 100),
+		stop:    make(chan any),
+		stopped: make(chan any),
 	}
 
 	for _, o := range opts {
@@ -126,6 +134,8 @@ func (s *Handoff) Run() error {
 		exit := make(chan os.Signal, 1)
 		signal.Notify(exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
+		s.events = make(chan event, s.maxConcurrentRuns)
+
 		db, err := storage.New(s.databaseFilePath)
 		if err != nil {
 			return fmt.Errorf("init storage: %w", err)
@@ -139,6 +149,8 @@ func (s *Handoff) Run() error {
 		go s.eventLoop()
 		go s.runHTTP()
 
+		s.restartPendingTestRuns()
+
 		signal := <-exit
 
 		s.gracefulShutdown(signal)
@@ -149,47 +161,29 @@ func (s *Handoff) Run() error {
 	return nil
 }
 
+func (s *Handoff) restartPendingTestRuns() {
+	// pendingRuns, err := s.storage.LoadPendingTestSuiteRuns(context.Background())
+	// if err != nil {
+	// 	slog.Warn("Unable to load pending test suite runs", "error", err)
+	// 	return
+	// }
+}
+
 func (s *Handoff) gracefulShutdown(signal os.Signal) {
 	slog.Info("Received signal, shutting down", "signal", signal.String())
-	shutdownTimeoutCtx, cancel := context.WithTimeout(context.Background(), time.Second*30)
-	defer cancel()
-	httpStopCtx, cancelHttp := context.WithCancel(context.Background())
-	defer cancelHttp()
 
-	go func() {
-		err := s.httpServer.Shutdown(shutdownTimeoutCtx)
-
-		if err == nil {
-			cancelHttp()
-		} else {
-			slog.Warn("Http listener did not shutdown successfully", "error", err)
-		}
-	}()
-
+	httpStopCtx := s.stopHTTP()
 	cronStopCtx := s.cron.Stop()
 
-	select {
-	case <-shutdownTimeoutCtx.Done():
-		slog.Warn("Graceful shutdown timed out, forcing exit")
-		return
-	case <-cronStopCtx.Done():
-		slog.Info("Scheduled tests stopped successfully")
-	}
+	<-httpStopCtx.Done()
+	slog.Info("Http listener stopped")
+	<-cronStopCtx.Done()
+	slog.Info("Scheduled tests stopped")
 
-	select {
-	case <-shutdownTimeoutCtx.Done():
-		slog.Warn("Graceful shutdown timed out, forcing exit")
-		return
-	case <-httpStopCtx.Done():
-		slog.Info("Http listener stopped successfully")
-	}
-
-	// after the scheduled jobs and the http listener is shutdown no more writes
-	// ot the events channel should occur therefor it should be safe to close it.
-	close(s.events)
+	eventLoopStopCtx := s.stopEventLoop()
 
 	slog.Info("Waiting for running tests to finish")
-	s.runningTests.Wait()
+	<-eventLoopStopCtx.Done()
 
 	slog.Info("Closing the database connection(s)")
 	if err := s.storage.Close(); err != nil {
@@ -197,7 +191,7 @@ func (s *Handoff) gracefulShutdown(signal os.Signal) {
 		return
 	}
 
-	slog.Info("Shutdown successfull")
+	slog.Info("Shutdown successful")
 }
 
 func (s *Handoff) parseFlags() {
@@ -206,6 +200,7 @@ func (s *Handoff) parseFlags() {
 	var listTestSuites = flag.Bool("l", false, "list all configured test suites and exit")
 	var databaseFile = flag.String("d", "handoff.db", "database file location")
 	var environment = flag.String("e", "", "the environment where the tests are run")
+	var maxConcurrentRuns = flag.Int("c", 25, "the max number of concurrent test runs. Must be set to value > 0")
 
 	flag.Parse()
 
@@ -213,10 +208,16 @@ func (s *Handoff) parseFlags() {
 		s.printTestSuites()
 	}
 
+	if *maxConcurrentRuns < 1 {
+		flag.Usage()
+		os.Exit(-1)
+	}
+
 	s.port = *port
 	s.serverMode = *serverMode
 	s.databaseFilePath = *databaseFile
 	s.environment = *environment
+	s.maxConcurrentRuns = *maxConcurrentRuns
 }
 
 func (s *Handoff) printTestSuites() {
@@ -292,13 +293,9 @@ func (s *Handoff) startSchedules() error {
 		}
 
 		entryID, err := s.cron.AddFunc(schedule.Schedule, func() {
-			s.events <- testRunStartedEvent{
-				testRunIdentifier: testRunIdentifier{suiteName: schedule.TestSuiteName},
-				scheduled:         time.Now(),
-				triggeredBy:       "scheduled",
-				tests:             len(ts.Tests),
-				environment:       s.environment,
-				testFilter:        schedule.testFilter,
+			_, err := s.startNewTestSuiteRun(ts, "scheduled", schedule.testFilter)
+			if err != nil {
+				slog.Error("starting new scheduled test suite run failed", "error", err, "test-suite", ts.Name)
 			}
 		})
 		if err != nil {
@@ -320,54 +317,101 @@ func (s *Handoff) eventLoop() {
 	for e := range s.events {
 		ctx := context.Background()
 
-		testSuiteRun := model.TestSuiteRun{}
-
-		isNewTestRun := e.RunID() < 1
-
-		if !isNewTestRun {
-			var err error
-
-			testSuiteRun, err = s.storage.LoadTestSuiteRun(ctx, e.SuiteName(), e.RunID())
-			if err != nil {
-				slog.Error("could not handle event", "error", err, "run-id", e.RunID(), "event", fmt.Sprintf("%T", e))
-				continue
-			}
+		testSuiteRun, err := s.storage.LoadTestSuiteRun(ctx, e.SuiteName(), e.RunID())
+		if err != nil {
+			slog.Error("could not handle event", "error", err, "run-id", e.RunID(), "event", fmt.Sprintf("%T", e))
+			continue
 		}
 
 		testSuiteRun = e.Apply(testSuiteRun)
 
-		var err error
-
-		if isNewTestRun {
-			testSuiteRun.ID, err = s.storage.SaveTestSuiteRun(ctx, testSuiteRun)
-		} else {
-			err = s.storage.UpdateTestSuiteRun(ctx, testSuiteRun)
-		}
-
-		// `TestResults` will only contain new / updated testresults so we can assume
-		// that every entry needs to be persisted.
-		for _, tr := range testSuiteRun.TestResults {
-			s.storage.UpsertTestRun(ctx, testSuiteRun.ID, tr)
-		}
-
+		err = s.storage.UpdateTestSuiteRun(ctx, testSuiteRun)
 		if err != nil {
 			slog.Error("could not persist test suite run", "error", err)
 			continue
 		}
 
-		switch e := e.(type) {
-		case testRunStartedEvent:
-			ts := s.readOnlyTestSuites[e.suiteName]
-
-			go s.runTestSuite(ts, testSuiteRun)
+		// `TestResults` will only contain new / updated testresults so we can assume
+		// that every entry needs to be persisted.
+		for _, tr := range testSuiteRun.TestResults {
+			err = s.storage.UpsertTestRun(ctx, testSuiteRun.ID, tr)
+			if err != nil {
+				slog.Error("could not persist test run", "error", err)
+			}
 		}
 	}
+
+	s.stopped <- true
 }
 
-func (s *Handoff) runTestSuite(suite model.TestSuite, testRun model.TestSuiteRun) {
-	start := time.Now()
+func (s *Handoff) stopEventLoop() context.Context {
+	cancelCtx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		// wait for all running test suites to finish
+		s.runningTestSuites.Wait()
+
+		// close the channel and continue to process the remaining events
+		close(s.events)
+
+		// wait for the event loop to stop
+		<-s.stopped
+
+		// notify the caller that the event looped has stopped
+		cancel()
+	}()
+
+	return cancelCtx
+}
+
+func (s *Handoff) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, testFilter *regexp.Regexp) (model.TestSuiteRun, error) {
+	testFilterString := ""
+	if testFilter != nil {
+		testFilterString = testFilter.String()
+	}
+	tsr := model.TestSuiteRun{
+		SuiteName:       ts.Name,
+		TestResults:     []model.TestRun{},
+		Result:          model.ResultPending,
+		TestFilter:      testFilterString,
+		TestFilterRegex: testFilter,
+		Tests:           len(ts.Tests),
+		Scheduled:       time.Now(),
+		TriggeredBy:     triggeredBy,
+		Environment:     s.environment,
+	}
+
+	var err error
+	tsr.ID, err = s.storage.SaveTestSuiteRun(context.Background(), tsr)
+	if err != nil {
+		return model.TestSuiteRun{}, fmt.Errorf("unable to persist new test suite run: %w", err)
+	}
+
+	go s.runTestSuite(ts, tsr)
+
+	return tsr, nil
+}
+
+func (s *Handoff) runTestSuite(suite model.TestSuite, testSuiteRun model.TestSuiteRun) {
+	s.runningTestSuites.Add(1)
+	defer s.runningTestSuites.Done()
+
+	s.events <- testRunStartedEvent{
+		testRunIdentifier: testRunIdentifier{
+			runID:     testSuiteRun.ID,
+			suiteName: suite.Name,
+		},
+		start: time.Now(),
+	}
 
 	testSuitesRunning := metric.TestSuitesRunning.WithLabelValues(suite.AssociatedService, suite.Name)
+
+	start := time.Now()
+
+	timeNotSet := time.Time{}
+	if testSuiteRun.Start == timeNotSet {
+		testSuiteRun.Start = start
+	}
 
 	testSuitesRunning.Inc()
 	defer func() {
@@ -380,24 +424,39 @@ func (s *Handoff) runTestSuite(suite model.TestSuite, testRun model.TestSuiteRun
 
 			s.events <- testRunSetupFailedEvent{
 				testRunIdentifier: testRunIdentifier{
-					runID:     testRun.ID,
+					runID:     testSuiteRun.ID,
 					suiteName: suite.Name,
 				},
-				start: start, end: time.Now(), err: err}
+				end: time.Now(), err: err}
 			return
 		}
 	}
 
-	skipped := 0
+	wasRunPreviously := func(testResults []model.TestRun, testName string) bool {
+		for _, tr := range testResults {
+			if tr.Name == testName {
+				return tr.Result != model.ResultPending
+			}
+		}
+		return false
+	}
 
-	filter := testRun.TestFilterRegex
+	skipped := testSuiteRun.Skipped
+
+	filter := testSuiteRun.TestFilterRegex
 
 	for _, test := range suite.Tests {
 		if filter != nil && !filter.MatchString(test.Name) {
 			skipped++
 			continue
 		}
-		s.executeTest(suite, testRun, test.Name, test.Func)
+		// skip if we are continuing a paused test suite run and this
+		// test was already run.
+		if wasRunPreviously(testSuiteRun.TestResults, test.Name) {
+			continue
+		}
+
+		s.executeTest(suite, testSuiteRun, test.Name, test.Func)
 	}
 
 	if suite.Teardown != nil {
@@ -410,10 +469,9 @@ func (s *Handoff) runTestSuite(suite model.TestSuite, testRun model.TestSuiteRun
 
 	s.events <- testRunFinishedEvent{
 		testRunIdentifier: testRunIdentifier{
-			runID:     testRun.ID,
+			runID:     testSuiteRun.ID,
 			suiteName: suite.Name,
 		},
-		start:   start,
 		end:     time.Now(),
 		skipped: skipped,
 	}
@@ -424,7 +482,6 @@ func (s *Handoff) executeTest(suite model.TestSuite, testRun model.TestSuiteRun,
 
 	t := t{
 		name:       name,
-		passed:     true,
 		runContext: map[string]any{},
 	}
 
@@ -435,7 +492,9 @@ func (s *Handoff) executeTest(suite model.TestSuite, testRun model.TestSuiteRun,
 
 		err := recover()
 
-		metric.TestRunsTotal.WithLabelValues(suite.AssociatedService, suite.Name, string(t.Result()))
+		result := t.Result()
+
+		metric.TestRunsTotal.WithLabelValues(suite.AssociatedService, suite.Name, string(result)).Inc()
 
 		s.events <- testFinishedEvent{
 			testRunIdentifier: testRunIdentifier{
@@ -444,8 +503,7 @@ func (s *Handoff) executeTest(suite model.TestSuite, testRun model.TestSuiteRun,
 			},
 			testName: name,
 			recovery: err,
-			passed:   t.passed,
-			skipped:  t.skipped,
+			result:   result,
 			logs:     t.logs,
 			start:    start,
 			end:      end,
@@ -454,8 +512,6 @@ func (s *Handoff) executeTest(suite model.TestSuite, testRun model.TestSuiteRun,
 		s.notifyTestFinished(suite, testRun, name, t.runContext)
 	}()
 
-	s.runningTests.Add(1)
-	defer s.runningTests.Done()
 	test(&t)
 }
 

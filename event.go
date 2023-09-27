@@ -2,7 +2,6 @@ package handoff
 
 import (
 	"fmt"
-	"regexp"
 	"time"
 
 	"github.com/raphi011/handoff/internal/model"
@@ -29,42 +28,30 @@ func (e testRunIdentifier) RunID() int {
 
 type testRunStartedEvent struct {
 	testRunIdentifier
-	scheduled   time.Time
-	triggeredBy string
-	testFilter  *regexp.Regexp
-	tests       int
-	environment string
+	start time.Time
 }
 
 func (e testRunStartedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
-	ts.ID = e.runID
-	ts.SuiteName = e.suiteName
-	ts.TestResults = []model.TestRun{}
-	ts.Scheduled = e.scheduled
-	ts.TestFilterRegex = e.testFilter
-	ts.Tests = e.tests
-	ts.Result = model.ResultPending
-	ts.Environment = e.environment
-
-	if e.testFilter != nil {
-		ts.TestFilter = e.testFilter.String()
-	}
+	ts.Start = e.start
 
 	return ts
 }
 
 type testRunFinishedEvent struct {
 	testRunIdentifier
-	start time.Time
-	end   time.Time
+	end time.Time
 	// skipped is the # of tests skipped by the run TestFilter
 	skipped int
 }
 
 func (e testRunFinishedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
-	ts.Start = e.start
 	ts.End = e.end
-	ts.DurationInMS = e.end.Sub(e.start).Milliseconds()
+
+	// todo: make sure test results contains every result
+	for _, r := range ts.TestResults {
+		ts.DurationInMS += r.DurationInMS
+	}
+
 	// add to skipped because each test can also call t.Skip()
 	ts.Skipped += e.skipped
 
@@ -81,16 +68,13 @@ func (e testRunFinishedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 
 type testRunSetupFailedEvent struct {
 	testRunIdentifier
-	start time.Time
-	end   time.Time
-	err   error
+	end time.Time
+	err error
 }
 
 func (e testRunSetupFailedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 	ts.Result = model.ResultSetupFailed
-	ts.Start = e.start
 	ts.End = e.end
-	ts.DurationInMS = e.end.Sub(e.start).Milliseconds()
 
 	return ts
 }

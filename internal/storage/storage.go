@@ -173,6 +173,28 @@ func (s *Storage) LoadTestSuiteRun(ctx context.Context, suiteName string, runID 
 	return scanTestSuiteRun(r)
 }
 
+func (s *Storage) LoadPendingTestSuiteRuns(ctx context.Context) ([]model.TestSuiteRun, error) {
+	runs := []model.TestSuiteRun{}
+	r, err := s.db.QueryxContext(ctx, `SELECT 
+		id, suiteName, environment, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy
+		FROM TestSuiteRun WHERE status=pending`)
+	if err != nil {
+		return runs, err
+	}
+	defer r.Close()
+
+	for r.Next() {
+		tsr, err := scanTestSuiteRun(r)
+		if err != nil {
+			return nil, err
+		}
+
+		runs = append(runs, tsr)
+	}
+
+	return runs, nil
+}
+
 func (s *Storage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string) ([]model.TestSuiteRun, error) {
 	runs := []model.TestSuiteRun{}
 	r, err := s.db.NamedQueryContext(ctx, `SELECT 

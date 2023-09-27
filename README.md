@@ -8,14 +8,13 @@ See [the example app](./cmd/example/main.go).
 
 ## Planned features
 
-- [ ] (Feature) Flaky test detection
 - [ ] (Feature) Server mode + cli mode
 - [ ] (Feature) Image for [helm chart](https://helm.sh/docs/topics/chart_tests/) tests for automated helm release rollbacks
 - [ ] (Feature) Use go:generate to generate go tests from handoff tests to execute with standard go tooling
-- [ ] (Feature) k8s operator / CRDs to configure test runs & schedules
 - [ ] (Feature) Output go test json report
 - [ ] (Feature) Test run backoff on failures
 - [ ] (Feature) Configurable test run retention policy
+- [ ] (Feature) Soft test fails that don't fail the testsuite
 - [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
 - [ ] (Technical) Websocket that returns realtime test results (including test logs)
 - [ ] (Technical) Authenticated HTTP requests through TLS client certificates
@@ -38,7 +37,10 @@ See [the example app](./cmd/example/main.go).
 
 ## Potential features
 
+- [ ] (Feature) Create a helm chart that supports remote test debugging through dlv
 - [ ] (Feature) Support running tests in languages other than go and collect test results
+- [ ] (Feature) Flaky test detection
+- [ ] (Feature) k8s operator / CRDs to configure test runs & schedules
 
 ## Non goals
 
