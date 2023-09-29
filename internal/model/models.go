@@ -40,6 +40,32 @@ type TestSuiteRun struct {
 	TestResults []TestRun `json:"testResults"`
 }
 
+func (tsr TestSuiteRun) ResultFromTestResults() Result {
+	result := ResultPassed
+
+	for _, r := range tsr.TestResults {
+		if r.Result == ResultPending {
+			return ResultPending
+		}
+
+		if r.Result == ResultFailed {
+			result = ResultFailed
+		}
+	}
+
+	return result
+}
+
+func (tsr TestSuiteRun) TestSuiteDuration() int64 {
+	duration := int64(0)
+
+	for _, r := range tsr.TestResults {
+		duration += r.DurationInMS
+	}
+
+	return duration
+}
+
 type TestRun struct {
 	SuiteName  string `json:"suiteName"`
 	SuiteRunID int    `json:"suiteRunId"`

@@ -38,9 +38,6 @@ type Handoff struct {
 	// configured plugins
 	plugins *pluginManager
 
-	// notifies that the eventloop has stopped
-	stopped chan any
-
 	// a map of all testsuites that must not be modified after
 	// initialisation.
 	readOnlyTestSuites map[string]model.TestSuite
@@ -56,8 +53,6 @@ type Handoff struct {
 	httpServer *http.Server
 
 	storage *storage.Storage
-
-	events chan any
 }
 
 // TestSuite represents the external view of the Testsuite to allow users of the library
@@ -88,7 +83,6 @@ func New(opts ...option) *Handoff {
 	h := &Handoff{
 		port:               1337,
 		readOnlyTestSuites: map[string]model.TestSuite{},
-		stopped:            make(chan any),
 	}
 
 	h.plugins = newPluginManager(h.asyncPluginCallback)
@@ -110,8 +104,6 @@ func (h *Handoff) Run() error {
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	h.events = make(chan any)
-
 	db, err := storage.New(h.databaseFilePath)
 	if err != nil {
 		return fmt.Errorf("init storage: %w", err)
@@ -122,7 +114,6 @@ func (h *Handoff) Run() error {
 		return fmt.Errorf("start schedules: %w", err)
 	}
 
-	go h.eventLoop()
 	go h.runHTTP()
 
 	h.restartPendingTestRuns()
@@ -157,9 +148,7 @@ func (s *Handoff) gracefulShutdown(signal os.Signal) {
 	<-pluginStopCtx.Done()
 	slog.Info("Plugins stopped")
 
-	eventLoopStopCtx := s.stopEventLoop()
-	<-eventLoopStopCtx.Done()
-	slog.Info("Eventloop stopped")
+	s.runningTestSuites.Wait()
 
 	if err := s.storage.Close(); err != nil {
 		slog.Warn("Closing DB connection failed", "error", err)
@@ -254,77 +243,6 @@ func (s *Handoff) startSchedules() error {
 	return nil
 }
 
-// eventLoop loops over all events and persists the changes to test suite runs and test runs.
-// It should be started as a goroutine once.
-func (s *Handoff) eventLoop() {
-	for e := range s.events {
-		ctx := context.Background()
-
-		switch et := e.(type) {
-		case testSuiteEvent:
-			testSuiteRun, err := s.storage.LoadTestSuiteRun(ctx, et.SuiteName(), et.RunID())
-			if err != nil {
-				slog.Error("could not load test suite run", "error", err, "run-id", et.RunID(), "event", fmt.Sprintf("%T", e))
-				continue
-			}
-
-			if et.LoadTestRuns() {
-				testSuiteRun.TestResults, err = s.storage.LoadTestRuns(ctx, et.SuiteName(), et.RunID())
-				if err != nil {
-					slog.Error("could not load test suite run test results", "error", err, "run-id", et.RunID(), "event", fmt.Sprintf("%T", e))
-					continue
-				}
-			}
-
-			testSuiteRun = et.Apply(testSuiteRun)
-
-			err = s.storage.UpdateTestSuiteRun(ctx, testSuiteRun)
-			if err != nil {
-				slog.Error("could not update test suite run", "error", err)
-				continue
-			}
-
-		case testRunEvent:
-			testRun, err := s.storage.LoadTestRun(ctx, et.SuiteName(), et.RunID(), et.TestName(), et.Attempt())
-			if err != nil {
-				slog.Error("Could not load test run", "error", err, "run-id", et.RunID(), "event", fmt.Sprintf("%T", e))
-				continue
-			}
-
-			testRun = et.Apply(testRun)
-
-			err = s.storage.UpdateTestRun(ctx, testRun)
-			if err != nil {
-				slog.Error("Could not update test run", "error", err)
-			}
-		default:
-			panic(fmt.Sprintf("received unexpected event: %+v (%T)", et, et))
-		}
-	}
-
-	s.stopped <- true
-}
-
-func (s *Handoff) stopEventLoop() context.Context {
-	cancelCtx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		// wait for all running test suites to finish
-		s.runningTestSuites.Wait()
-
-		// close the channel and continue to process the remaining events
-		close(s.events)
-
-		// wait for the event loop to stop
-		<-s.stopped
-
-		// notify the caller that the event looped has stopped
-		cancel()
-	}()
-
-	return cancelCtx
-}
-
 // startNewTestSuiteRun is used to start new test suite runs. It persists the
 // test suite run in a pending state and kicks off the execution of the run in a separate
 // goroutine.
@@ -404,12 +322,14 @@ func (s *Handoff) runTestSuite(
 	s.runningTestSuites.Add(1)
 	defer s.runningTestSuites.Done()
 
-	s.events <- testSuiteRunStartedEvent{
-		testSuiteRunEvent: testSuiteRunEvent{
-			runID:     tsr.ID,
-			suiteName: suite.Name,
-		},
-		start: time.Now(),
+	ctx := context.Background()
+
+	timeNotSet := time.Time{}
+	if tsr.Start == timeNotSet {
+		tsr.Start = time.Now()
+		if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
+			slog.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
+		}
 	}
 
 	testSuitesRunning := metric.TestSuitesRunning.WithLabelValues(suite.AssociatedService, suite.Name)
@@ -420,14 +340,13 @@ func (s *Handoff) runTestSuite(
 
 	if suite.Setup != nil {
 		if err := suite.Setup(); err != nil {
-			slog.Error("setup of suite failed", "suite-name", suite.Name, "error", err)
+			slog.Warn("setup of suite failed", "suite-name", suite.Name, "error", err)
 
-			s.events <- testSuiteRunSetupFailedEvent{
-				testSuiteRunEvent: testSuiteRunEvent{
-					runID:     tsr.ID,
-					suiteName: suite.Name,
-				},
-				end: time.Now(), err: err}
+			tsr.Result = model.ResultSetupFailed
+			tsr.End = time.Now()
+			if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
+				slog.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
+			}
 			return
 		}
 	}
@@ -454,7 +373,7 @@ func (s *Handoff) runTestSuite(
 			tr = tr.NewForcedAttempt()
 
 			var err error
-			tr.Attempt, err = s.storage.InsertForcedTestRun(context.Background(), tr)
+			tr.Attempt, err = s.storage.InsertForcedTestRun(ctx, tr)
 			if err != nil {
 				slog.Error("unable to persist forced test run", "error", err)
 				return
@@ -480,13 +399,12 @@ func (s *Handoff) runTestSuite(
 	// TODO: Add the plugin context to the `testRunFinishedEvent`
 	s.plugins.notifyTestSuiteFinished(suite, tsr)
 
-	s.events <- testSuiteRunFinishedEvent{
-		testSuiteRunEvent: testSuiteRunEvent{
-			runID:        tsr.ID,
-			suiteName:    suite.Name,
-			loadTestRuns: true,
-		},
-		end: time.Now(),
+	tsr.End = time.Now()
+	tsr.Result = tsr.ResultFromTestResults()
+	tsr.DurationInMS = tsr.TestSuiteDuration()
+
+	if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
+		slog.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
 	}
 
 	s.plugins.notifyTestSuiteFinishedAsync(suite, tsr)
@@ -512,26 +430,32 @@ func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun model.TestSuiteRun
 
 		metric.TestRunsTotal.WithLabelValues(suite.AssociatedService, suite.Name, string(result)).Inc()
 
-		t.runTestCleanup()
-
 		s.plugins.notifyTestFinished(suite, testSuiteRun, testRun.Name, t.runtimeContext)
 
-		s.events <- testFinishedEvent{
-			testRunIdentifier: testRunIdentifier{
-				runID:     testSuiteRun.ID,
-				suiteName: suite.Name,
-				attempt:   testRun.Attempt,
-				testName:  testRun.Name,
-			},
-			recovery:    err,
-			result:      result,
-			logs:        t.logs.String(),
-			start:       start,
-			end:         end,
-			testContext: t.runtimeContext,
+		logs := t.logs
+
+		if err != nil && t.result != model.ResultSkipped {
+			if _, ok := err.(failTestErr); !ok {
+				// this is an unexpected panic (does not originate from handoff)
+				logs.WriteString(fmt.Sprintf("%v\n", err))
+				result = model.ResultFailed
+			}
+		}
+
+		testRun.Start = start
+		testRun.End = end
+		testRun.DurationInMS = end.Sub(start).Milliseconds()
+		testRun.Result = result
+		testRun.Logs = logs.String()
+		testRun.Context = t.runtimeContext
+
+		if err := s.storage.UpdateTestRun(context.Background(), testRun); err != nil {
+			slog.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
 		}
 
 		s.plugins.notifyTestFinishedAync(suite, testSuiteRun, testRun.Name, t.runtimeContext)
+
+		t.runTestCleanup()
 	}()
 
 	suite.Tests[testRun.Name](&t)
