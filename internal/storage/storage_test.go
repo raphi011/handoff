@@ -14,6 +14,7 @@ func TestMigration(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer close(s)
 
 	ctx := context.Background()
 
@@ -24,9 +25,6 @@ func TestMigration(t *testing.T) {
 		Result:       model.ResultPassed,
 		TestFilter:   "",
 		Tests:        5,
-		Passed:       3,
-		Skipped:      1,
-		Failed:       1,
 		Scheduled:    now,
 		Start:        now,
 		End:          time.Time{},
@@ -54,10 +52,11 @@ func TestMigration(t *testing.T) {
 }
 
 func TestUpsertTestRun(t *testing.T) {
-	s, err := storage.New("ab.db")
+	s, err := storage.New("")
 	if err != nil {
 		t.Error(err)
 	}
+	defer close(s)
 
 	ctx := context.Background()
 
@@ -68,9 +67,6 @@ func TestUpsertTestRun(t *testing.T) {
 		Result:       model.ResultPassed,
 		TestFilter:   "",
 		Tests:        5,
-		Passed:       3,
-		Skipped:      1,
-		Failed:       1,
 		Scheduled:    now,
 		Start:        now,
 		End:          time.Time{},
@@ -85,19 +81,26 @@ func TestUpsertTestRun(t *testing.T) {
 	t.Logf("created testsuiterun with id %d", id)
 
 	tr := model.TestRun{
-		Name:   "bla",
-		Result: model.ResultPending,
+		Name:       "bla",
+		SuiteName:  "test",
+		SuiteRunID: id,
+		Attempt:    1,
+		Result:     model.ResultPending,
 	}
 
-	err = s.UpsertTestRun(ctx, id, tr)
+	err = s.InsertTestRun(ctx, tr)
 	if err != nil {
 		t.Error(err)
 	}
 
 	tr.Result = model.ResultPassed
 
-	err = s.UpsertTestRun(ctx, id, tr)
+	err = s.UpdateTestRun(ctx, tr)
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func close(s *storage.Storage) {
+	_ = s.Close()
 }

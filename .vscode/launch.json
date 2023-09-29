@@ -5,13 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch Package",
+            "name": "Launch handoff example",
             "type": "go",
             "request": "launch",
             "mode": "auto",
-
-            "program": "./cmd/example",
-            "args": ["-s"]
+            "program": "./cmd/example"
+        },
+        {
+            "name": "Launch transformcli example",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "./cmd/transformcli",
+            "args": ["./example.go.file"]
         }
     ]
 }

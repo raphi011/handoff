@@ -8,25 +8,28 @@ See [the example app](./cmd/example/main.go).
 
 ## Planned features
 
-- [ ] (Feature) Server mode + cli mode
 - [ ] (Feature) Image for [helm chart](https://helm.sh/docs/topics/chart_tests/) tests for automated helm release rollbacks
-- [ ] (Feature) Use go:generate to generate go tests from handoff tests to execute with standard go tooling
-- [ ] (Feature) Output go test json report
-- [ ] (Feature) Test run backoff on failures
+- [ ] (Feature) Write a tool "transformcli" that uses go:generate and go/ast to transform handoff tests and suites to standard go tests (suite -> test with subtests + init and cleanup)
+- [ ] (Feature) Automatic test run retries/backoff on failures
 - [ ] (Feature) Configurable test run retention policy
+- [ ] (Feature) Manual retrying of failed tests
+- [ ] (Feature) Grafana service dashboard template
 - [ ] (Feature) Soft test fails that don't fail the entire testsuite. This can be used to help with the chicken/egg problem when you add new tests that target a new service version that is not deployed yet.
-- [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
+- [ ] (Feature) Flaky test detection + metric
 - [ ] (Feature) Add test-suite labels (e.g. instead of "associated service", "team name" attributes)
 - [ ] (Feature) Add support for async plugins in case they need to do slow operations such as http calls
-- [ ] (Technical) Websocket that returns realtime test results (including test logs)
+- [ ] (Feature) Configuration through either ENV vars or cli flags
+- [ ] (Feature) Asynchronous plugin hooks with callbacks for slow operations (e.g. http calls)
+- [ ] (Technical) Limit the number of concurrent test runs via a configuration option
+- [ ] (Technical) Websocket that streams test results (like test logs)
 - [ ] (Technical) Authenticated HTTP requests through TLS client certificates
 - [ ] (Technical) Continue test runs on service restart
-- [ ] (Plugin) Pagerduty - failed e2e tests can triger alerts / incidents
+- [ ] (Plugin) Pagerduty - triger alerts/incidents on failed e2e tests
 - [ ] (Plugin) Slack - send messages to slack channels when tests pass / fail
 - [ ] (Plugin) Github - pr status checks
 - [ ] (Plugin) Prometheus / Loki / Tempo / ELK stack - find and fetch logs/traces/metrics that are created by tests (e.g. for easier debugging) - e.g. via correlation ids
 - [x] (Technical) Graceful server shutdown
-- [x] (Technical) Persistence layer
+- [x] (Technical) SQLite Persistence layer
 - [x] (Feature) Basic webui that shows test run results
 - [x] (Feature) Start test runs via POST requests
 - [x] (Feature) Write test suites with multiple tests written in Go
@@ -39,18 +42,21 @@ See [the example app](./cmd/example/main.go).
 
 ## Potential features
 
+- [ ] (Feature) Server mode + cli mode
+- [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
+- [ ] (Feature) Output go test json report
 - [ ] (Feature) Create a helm chart that supports remote test debugging through dlv
 - [ ] (Feature) Support running tests in languages other than go
-- [ ] (Feature) Flaky test detection
 - [ ] (Feature) k8s operator / CRDs to configure test runs & schedules
+- [ ] (Feature) Opt-in test timeouts through t.Context and / or providing wrapped handoff functions ( e.g. http clients) to be used in tests  that implement test timeouts
+
+## Open questions
+
+- How to add test timeouts (it's impossible to externally stop goroutines running user provided functions)?
 
 ## Non goals
 
-- Implement a new assertion library. We should aim to be compatible with existing ones.
-
-## Technical limitations
-
-- No way to set a timeout for test functions
+- Implement a new assertion library. We aim to be compatible with existing ones.
 
 ## Metrics
 
@@ -61,4 +67,3 @@ Metrics are exposed via the `/metrics` endpoint.
 | handoff_testsuites_running   | gauge   | The number of test suites currently running                 | associated_service, suite_name         |
 | handoff_testsuites_run_total | counter | The number of test suites run since the service was started | associated_service, suite_name, result |
 | handoff_tests_run_total      | counter | The number of tests run since the service was started       | associated_service, suite_name, result |
-

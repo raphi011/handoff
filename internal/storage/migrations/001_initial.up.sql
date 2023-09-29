@@ -1,36 +1,37 @@
 CREATE TABLE TestSuiteRun(
-    id INTEGER PRIMARY KEY,
+    id INTEGER NOT NULL,
     suiteName TEXT NOT NULL,
-    environment TEXT NOT NULL,
-    result TEXT,
-    testFilter TEXT,
 
-    total INTEGER NOT NULL,
-    passed INTEGER NOT NULL,
-    skipped INTEGER NOT NULL,
-    failed INTEGER NOT NULL,
+    environment TEXT NOT NULL,
+    result TEXT NOT NULL,
+    testFilter TEXT NOT NULL,
 
     scheduledTime TEXT NOT NULL,
-    startTime TEXT,
-    endTime TEXT, 
+    startTime TEXT NOT NULL,
+    endTime TEXT NOT NULL, 
 
-    setupLogs TEXT,
+    setupLogs TEXT NOT NULL,
 
-    triggeredBy TEXT NOT NULL
+    triggeredBy TEXT NOT NULL,
 
+    PRIMARY KEY(id, suiteName)
 ) STRICT;
 
 CREATE TABLE TestRun(
+    suiteName TEXT NOT NULL,
     suiteRunId INTEGER NOT NULL,
+
     testName TEXT NOT NULL,
+    attempt INTEGER NOT NULL,
+
+    context TEXT NOT NULL,
+
     result TEXT NOT NULL, 
+    logs TEXT NOT NULL,
 
-    logs TEXT,
+    startTime TEXT NOT NULL,
+    endTime TEXT NOT NULL,
 
-    startTime TEXT,
-    endTime TEXT,
-
-    PRIMARY KEY(suiteRunId, testName),
-    FOREIGN KEY(suiteRunId) REFERENCES TestSuiteRun(id)
-
+    PRIMARY KEY(suiteName, suiteRunId, testName, attempt),
+    FOREIGN KEY(suiteName, suiteRunId) REFERENCES TestSuiteRun(suiteName, id)
 ) STRICT;

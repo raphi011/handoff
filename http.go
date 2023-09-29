@@ -35,7 +35,8 @@ func (s *Handoff) runHTTP() error {
 	router.GET("/healthz", s.getHealth)
 	router.GET("/ready", s.getReady)
 
-	router.POST("/suites/:suite-name/runs", s.startTestSuiteRun)
+	router.POST("/suites/:suite-name/runs", s.startTestSuite)
+	router.POST("/suites/:suite-name/runs/:run-id", s.rerunTestSuite)
 	router.GET("/suites", s.getTestSuites)
 	router.GET("/suites/:suite-name/runs", s.getTestSuiteRuns)
 	router.GET("/suites/:suite-name/runs/:run-id", s.getTestSuiteRun)
@@ -70,7 +71,7 @@ func (s *Handoff) stopHTTP() context.Context {
 	return httpStopCtx
 }
 
-func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *Handoff) startTestSuite(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	suite, err := s.loadTestSuite(r, p)
 	if err != nil {
 		s.httpError(w, err)
@@ -85,6 +86,10 @@ func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p ht
 			s.httpError(w, malformedRequestError{param: "filter", reason: "invalid regex"})
 			return
 		}
+
+		if len(suite.FilterTests(filter)) == 0 {
+			s.httpError(w, malformedRequestError{param: "filter", reason: "no tests match the given filter"})
+		}
 	}
 
 	tsr, err := s.startNewTestSuiteRun(suite, "api", filter)
@@ -92,8 +97,35 @@ func (s *Handoff) startTestSuiteRun(w http.ResponseWriter, r *http.Request, p ht
 		s.httpError(w, err)
 	}
 
-	// TODO: set status created code
-	s.writeResponse(w, r, tsr)
+	s.writeResponse(w, r, http.StatusCreated, tsr)
+}
+
+func (s *Handoff) rerunTestSuite(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	suite, err := s.loadTestSuite(r, p)
+	if err != nil {
+		s.httpError(w, err)
+		return
+	}
+
+	var testFilter *regexp.Regexp
+
+	if filterParam := r.URL.Query().Get("filter"); filterParam != "" {
+		testFilter, err = regexp.Compile(filterParam)
+		if err != nil {
+			s.httpError(w, malformedRequestError{param: "filter", reason: "invalid regex"})
+			return
+		}
+	}
+
+	tsr, err := s.loadTestSuiteRun(context.Background(), p)
+	if err != nil {
+		s.httpError(w, err)
+		return
+	}
+
+	s.runTestSuite(suite, tsr, testFilter, true)
+
+	s.writeResponse(w, r, http.StatusAccepted, tsr)
 }
 
 func (s *Handoff) getTestSuites(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -105,7 +137,7 @@ func (s *Handoff) getTestSuites(w http.ResponseWriter, r *http.Request, p httpro
 		i++
 	}
 
-	s.writeResponse(w, r, testSuites)
+	s.writeResponse(w, r, http.StatusOK, testSuites)
 }
 
 func (s *Handoff) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -115,17 +147,17 @@ func (s *Handoff) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p http
 		return
 	}
 
-	s.writeResponse(w, r, testRun)
+	s.writeResponse(w, r, http.StatusOK, testRun)
 }
 
 func (s *Handoff) getTestRunResult(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	testRun, err := s.loadTestRun(r.Context(), p)
+	testRun, err := s.loadTestRun(r.Context(), r, p)
 	if err != nil {
 		s.httpError(w, err)
 		return
 	}
 
-	s.writeResponse(w, r, testRun)
+	s.writeResponse(w, r, http.StatusOK, testRun)
 }
 
 func (s *Handoff) getHealth(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -143,31 +175,33 @@ func (s *Handoff) getTestSuiteRuns(w http.ResponseWriter, r *http.Request, p htt
 		return
 	}
 
-	if err := s.writeResponse(w, r, testRuns); err != nil {
+	if err := s.writeResponse(w, r, http.StatusOK, testRuns); err != nil {
 		slog.Warn("writing get test suite runs response: %v", err)
 	}
 }
 
-func (s *Handoff) writeResponse(w http.ResponseWriter, r *http.Request, body any) error {
+func (s *Handoff) writeResponse(w http.ResponseWriter, r *http.Request, status int, body any) error {
 	var err error
 
 	if headerAcceptsType(r.Header, "text/html") {
 		w.Header().Add("Content-Type", "text/html")
+		w.WriteHeader(status)
 
 		switch t := body.(type) {
 		case model.TestRun:
-			html.RenderTestRun(t, w)
+			err = html.RenderTestRun(t, w)
 		case model.TestSuiteRun:
-			html.RenderTestSuiteRun(t, w)
+			err = html.RenderTestSuiteRun(t, w)
 		case []model.TestSuiteRun:
-			html.RenderTestSuiteRuns(t, w)
+			err = html.RenderTestSuiteRuns(t, w)
 		case []model.TestSuite:
-			html.RenderTestSuites(t, w)
+			err = html.RenderTestSuites(t, w)
 		default:
 			return fmt.Errorf("no template available for type %v", t)
 		}
 	} else {
 		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(status)
 
 		enc := json.NewEncoder(w)
 		err = enc.Encode(body)
@@ -198,17 +232,23 @@ func (s *Handoff) loadTestSuite(r *http.Request, p httprouter.Params) (model.Tes
 	return ts, nil
 }
 
-func (s *Handoff) loadTestRun(ctx context.Context, p httprouter.Params) (model.TestRun, error) {
-	// TODO: not needed ATM because the run id is global and not per test suite
-	// this should be per suite in the future
-	// suiteName := p.ByName("suite-name")
+func (s *Handoff) loadTestRun(ctx context.Context, r *http.Request, p httprouter.Params) (model.TestRun, error) {
+	suiteName := p.ByName("suite-name")
 	testName := p.ByName("test-name")
 	runID, err := strconv.Atoi(p.ByName("run-id"))
 	if err != nil {
 		return model.TestRun{}, malformedRequestError{param: "run-id", reason: "must be an integer"}
 	}
 
-	tr, err := s.storage.LoadTestRun(ctx, runID, testName)
+	// if len(r.URL.Query["attempt"]) != 1 {
+
+	// }
+	// attempt, err := strconv.Atoi(
+	// if err != nil {
+	// 	return model.TestRun{}, malformedRequestError{param: "run-id", reason: "must be an integer"}
+	// }
+
+	tr, err := s.storage.LoadTestRun(ctx, suiteName, runID, testName, 1 /* todo */)
 	if err != nil {
 		return model.TestRun{}, err
 	}
@@ -234,7 +274,7 @@ func (s *Handoff) loadTestSuiteRun(ctx context.Context, p httprouter.Params) (mo
 		return model.TestSuiteRun{}, err
 	}
 
-	tr.TestResults, err = s.storage.LoadTestRuns(ctx, runID)
+	tr.TestResults, err = s.storage.LoadTestRuns(ctx, suiteName, runID)
 	if err != nil {
 		return model.TestSuiteRun{}, err
 	}

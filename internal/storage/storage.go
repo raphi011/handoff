@@ -2,7 +2,10 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"embed"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
@@ -103,19 +106,67 @@ func migrateDB(db *sqlx.DB) error {
 	return nil
 }
 
+type storageContextKey string
+
+func (s *Storage) StartTransaction(ctx context.Context) (context.Context, error) {
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return ctx, err
+	}
+
+	return context.WithValue(ctx, storageContextKey("storage.transaction"), tx), nil
+}
+
+func (s *Storage) CommitTransaction(ctx context.Context) error {
+	v := ctx.Value(storageContextKey("storage.transaction"))
+
+	if v == nil {
+		return errors.New("context does not contain a transaction")
+	}
+
+	return v.(*sqlx.Tx).Commit()
+}
+
+func (s *Storage) RollbackTransaction(ctx context.Context) {
+	v := ctx.Value(storageContextKey("storage.transaction"))
+
+	if v != nil {
+		err := v.(*sqlx.Tx).Rollback()
+		if err != nil && err != sql.ErrTxDone {
+			slog.Warn("could not rollback transaction", "error", err)
+		}
+	}
+}
+
+func (s *Storage) getDB(ctx context.Context) commonDB {
+	v := ctx.Value(storageContextKey("storage.transaction"))
+
+	if v == nil {
+		return s.db
+	}
+
+	return v.(*sqlx.Tx)
+}
+
+type commonDB interface {
+	NamedExecContext(ctx context.Context, query string, arg interface{}) (sql.Result, error)
+	NamedQuery(query string, arg interface{}) (*sqlx.Rows, error)
+	QueryxContext(ctx context.Context, query string, args ...interface{}) (*sqlx.Rows, error)
+}
+
 func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) (int, error) {
-	r, err := s.db.NamedExecContext(ctx, `INSERT INTO TestSuiteRun 
-	(suiteName, environment, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy) VALUES
-	(:suiteName, :environment, :result, :testFilter, :total, :passed, :skipped, :failed, :scheduledTime, :startTime, :endTime, :setupLogs, :triggeredBy)`,
+	db := s.getDB(ctx)
+
+	r, err := db.NamedExecContext(ctx, `INSERT INTO TestSuiteRun 
+	(suiteName, environment, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, id) VALUES
+	(:suiteName, :environment, :result, :testFilter, :scheduledTime, :startTime, :endTime, :setupLogs, :triggeredBy, 
+		COALESCE((select max(id)+1 from TestSuiteRun where suiteName=:suiteName), 1)
+		)`,
 		map[string]any{
 			"suiteName":     tsr.SuiteName,
 			"environment":   tsr.Environment,
 			"result":        tsr.Result,
 			"testFilter":    tsr.TestFilter,
-			"total":         tsr.Tests,
-			"passed":        tsr.Passed,
-			"skipped":       tsr.Skipped,
-			"failed":        tsr.Failed,
 			"scheduledTime": timeFormat(tsr.Scheduled),
 			"startTime":     timeFormat(tsr.Start),
 			"endTime":       timeFormat(tsr.End),
@@ -135,14 +186,13 @@ func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) 
 }
 
 func (s *Storage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) error {
-	_, err := s.db.NamedExecContext(ctx, `UPDATE TestSuiteRun SET
-	result=:result, passed=:passed, skipped=:skipped, failed=:failed, startTime=:startTime, endTime=:endTime, setupLogs=:setupLogs
+	db := s.getDB(ctx)
+
+	_, err := db.NamedExecContext(ctx, `UPDATE TestSuiteRun SET
+	result=:result, startTime=:startTime, endTime=:endTime, setupLogs=:setupLogs
 	where id = :id and suiteName = :suiteName`,
 		map[string]any{
 			"result":    tsr.Result,
-			"passed":    tsr.Passed,
-			"skipped":   tsr.Skipped,
-			"failed":    tsr.Failed,
 			"startTime": timeFormat(tsr.Start),
 			"endTime":   timeFormat(tsr.End),
 			"setupLogs": tsr.SetupLogs,
@@ -154,8 +204,10 @@ func (s *Storage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun
 }
 
 func (s *Storage) LoadTestSuiteRun(ctx context.Context, suiteName string, runID int) (model.TestSuiteRun, error) {
-	r, err := s.db.NamedQueryContext(ctx, `SELECT 
-	id, suiteName, environment, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy
+	db := s.getDB(ctx)
+
+	r, err := db.NamedQuery(`SELECT 
+	id, suiteName, environment, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy
 	FROM TestSuiteRun WHERE suiteName = :suiteName and id = :id`,
 		map[string]any{
 			"suiteName": suiteName,
@@ -174,9 +226,11 @@ func (s *Storage) LoadTestSuiteRun(ctx context.Context, suiteName string, runID 
 }
 
 func (s *Storage) LoadPendingTestSuiteRuns(ctx context.Context) ([]model.TestSuiteRun, error) {
+	db := s.getDB(ctx)
+
 	runs := []model.TestSuiteRun{}
-	r, err := s.db.QueryxContext(ctx, `SELECT 
-		id, suiteName, environment, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy
+	r, err := db.QueryxContext(ctx, `SELECT 
+		id, suiteName, environment, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy
 		FROM TestSuiteRun WHERE status=pending`)
 	if err != nil {
 		return runs, err
@@ -196,9 +250,11 @@ func (s *Storage) LoadPendingTestSuiteRuns(ctx context.Context) ([]model.TestSui
 }
 
 func (s *Storage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string) ([]model.TestSuiteRun, error) {
+	db := s.getDB(ctx)
+
 	runs := []model.TestSuiteRun{}
-	r, err := s.db.NamedQueryContext(ctx, `SELECT 
-		id, suiteName, environment, result, testFilter, total, passed, skipped, failed, scheduledTime, startTime, endTime, setupLogs, triggeredBy
+	r, err := db.NamedQuery(`SELECT 
+		id, suiteName, environment, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy
 		FROM TestSuiteRun WHERE suiteName = :suiteName`,
 		map[string]any{"suiteName": suiteName},
 	)
@@ -219,12 +275,17 @@ func (s *Storage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string)
 	return runs, nil
 }
 
-func (s *Storage) LoadTestRuns(ctx context.Context, tsrID int) ([]model.TestRun, error) {
+func (s *Storage) LoadTestRuns(ctx context.Context, suiteName string, tsrID int) ([]model.TestRun, error) {
+	db := s.getDB(ctx)
+
 	runs := []model.TestRun{}
-	r, err := s.db.NamedQueryContext(ctx, `SELECT 
-		testName, result, logs, startTime, endTime
-		FROM TestRun WHERE suiteRunId=:suiteRunId`,
-		map[string]any{"suiteRunId": tsrID},
+	r, err := db.NamedQuery(`SELECT 
+		suiteName, suiteRunId, testName, attempt, result, logs, context, startTime, endTime
+		FROM TestRun WHERE suiteName=:suiteName and suiteRunId=:suiteRunId`,
+		map[string]any{
+			"suiteRunId": tsrID,
+			"suiteName":  suiteName,
+		},
 	)
 	if err != nil {
 		return runs, err
@@ -243,13 +304,17 @@ func (s *Storage) LoadTestRuns(ctx context.Context, tsrID int) ([]model.TestRun,
 	return runs, nil
 }
 
-func (s *Storage) LoadTestRun(ctx context.Context, tsrID int, testName string) (model.TestRun, error) {
-	r, err := s.db.NamedQueryContext(ctx, `SELECT 
-		testName, result, logs, startTime, endTime
-		FROM TestRun WHERE suiteRunId=:suiteRunId and testName=:testName`,
+func (s *Storage) LoadTestRun(ctx context.Context, suiteName string, tsrID int, testName string, attempt int) (model.TestRun, error) {
+	db := s.getDB(ctx)
+
+	r, err := db.NamedQuery(`SELECT 
+		suiteName, suiteRunId, testName, attempt, result, logs, context, startTime, endTime
+		FROM TestRun WHERE suiteName=:suiteName and suiteRunId=:suiteRunId and testName=:testName and attempt=:attempt`,
 		map[string]any{
 			"suiteRunId": tsrID,
+			"suiteName":  suiteName,
 			"testName":   testName,
+			"attempt":    attempt,
 		},
 	)
 	if err != nil {
@@ -264,23 +329,106 @@ func (s *Storage) LoadTestRun(ctx context.Context, tsrID int, testName string) (
 	return scanTestRun(r)
 }
 
-func (s *Storage) UpsertTestRun(ctx context.Context, tsrID int, tr model.TestRun) error {
-	_, err := s.db.NamedExecContext(ctx, `INSERT INTO TestRun
-	(suiteRunId, testName, result, logs, startTime, endTime) VALUES
-	(:suiteRunId, :testName, :result, :logs, :startTime, :endTime)
-	ON CONFLICT(suiteRunID, testName) 
-	DO UPDATE SET 
-	result=:result, logs=:logs, startTime=:startTime, endTime=:endTime`,
+func (s *Storage) InsertTestRun(ctx context.Context, tr model.TestRun) error {
+	testContext, err := json.Marshal(tr.Context)
+	if err != nil {
+		return fmt.Errorf("unable to marshal plugin data: %w", err)
+	}
+
+	db := s.getDB(ctx)
+	_, err = db.NamedExecContext(ctx, `INSERT INTO TestRun
+	(suiteName, suiteRunId, testName, result, logs, context, startTime, endTime, attempt) VALUES
+	(:suiteName, :suiteRunId, :testName, :result, :logs, :context, :startTime, :endTime, :attempt)`,
 		map[string]any{
-			"suiteRunId": tsrID,
+			"suiteName":  tr.SuiteName,
+			"suiteRunId": tr.SuiteRunID,
 			"testName":   tr.Name,
 			"result":     tr.Result,
 			"logs":       tr.Logs,
+			"context":    string(testContext),
+			"startTime":  timeFormat(tr.Start),
+			"endTime":    timeFormat(tr.End),
+			"attempt":    tr.Attempt,
+		})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Storage) InsertForcedTestRun(ctx context.Context, tr model.TestRun) (int, error) {
+	testContext, err := json.Marshal(tr.Context)
+	if err != nil {
+		return -1, fmt.Errorf("unable to marshal plugin data: %w", err)
+	}
+
+	db := s.getDB(ctx)
+	r, err := db.NamedQuery(`INSERT INTO TestRun
+	(suiteName, suiteRunId, testName, result, logs, context, startTime, endTime, attempt) VALUES
+	(:suiteName, :suiteRunId, :testName, :result, :logs, :context, :startTime, :endTime, 
+		COALESCE(select max(attempt)+1 from TestRun where suiteName=:suiteName and suiteRunId=:suiteRunId and testName=:testName, 1)
+	RETURNING attempt`,
+		map[string]any{
+			"suiteName":  tr.SuiteName,
+			"suiteRunId": tr.SuiteRunID,
+			"testName":   tr.Name,
+			"result":     tr.Result,
+			"logs":       tr.Logs,
+			"context":    string(testContext),
 			"startTime":  timeFormat(tr.Start),
 			"endTime":    timeFormat(tr.End),
 		})
+	if err != nil {
+		return -1, err
+	}
+	defer r.Close()
 
-	return err
+	if !r.Next() {
+		return -1, errors.New("could not retrieve created testrun attempt #")
+	}
+
+	var attempt int
+
+	if err = r.Scan(attempt); err != nil {
+		return -1, errors.New("could not retrieve created testrun attempt #")
+
+	}
+
+	return attempt, nil
+
+}
+
+func (s *Storage) UpdateTestRun(ctx context.Context, tr model.TestRun) error {
+	testContext, err := json.Marshal(tr.Context)
+	if err != nil {
+		return fmt.Errorf("unable to marshal plugin data: %w", err)
+	}
+
+	db := s.getDB(ctx)
+	r, err := db.NamedExecContext(ctx, `UPDATE TestRun SET
+	result=:result, logs=:logs, startTime=:startTime, endTime=:endTime, context=:context
+	WHERE suiteName=:suiteName and suiteRunId=:suiteRunId and testName=:testName and attempt=:attempt`,
+		map[string]any{
+			"suiteName":  tr.SuiteName,
+			"suiteRunId": tr.SuiteRunID,
+			"testName":   tr.Name,
+			"attempt":    tr.Attempt,
+			"result":     tr.Result,
+			"logs":       tr.Logs,
+			"context":    string(testContext),
+			"startTime":  timeFormat(tr.Start),
+			"endTime":    timeFormat(tr.End),
+		})
+	if err != nil {
+		return fmt.Errorf("update statement failed")
+	}
+
+	if affected, _ := r.RowsAffected(); affected != 1 {
+		return fmt.Errorf("test run not found")
+	}
+
+	return nil
 }
 
 func timeFormat(t time.Time) string {
@@ -296,10 +444,16 @@ func scanTestRun(r *sqlx.Rows) (model.TestRun, error) {
 
 	var start, end string
 
+	var testContext []byte
+
 	err := r.Scan(
+		&tr.SuiteName,
+		&tr.SuiteRunID,
 		&tr.Name,
+		&tr.Attempt,
 		&tr.Result,
 		&tr.Logs,
+		&testContext,
 		&start,
 		&end,
 	)
@@ -312,6 +466,9 @@ func scanTestRun(r *sqlx.Rows) (model.TestRun, error) {
 	}
 	if tr.End, err = parseDate(end); err != nil {
 		return model.TestRun{}, fmt.Errorf("parsing end time: %w", err)
+	}
+	if err = json.Unmarshal(testContext, &tr.Context); err != nil {
+		return model.TestRun{}, fmt.Errorf("unmarshaling plugin data: %w", err)
 	}
 
 	tr.DurationInMS = tr.End.Sub(tr.Start).Milliseconds()
@@ -330,10 +487,6 @@ func scanTestSuiteRun(r *sqlx.Rows) (model.TestSuiteRun, error) {
 		&tsr.Environment,
 		&tsr.Result,
 		&tsr.TestFilter,
-		&tsr.Tests,
-		&tsr.Passed,
-		&tsr.Skipped,
-		&tsr.Failed,
 		&scheduled,
 		&start,
 		&end,

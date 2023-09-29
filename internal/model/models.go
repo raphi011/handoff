@@ -13,8 +13,6 @@ type TestSuiteRun struct {
 	ID int `json:"id"`
 	// SuiteName is the name of the test suite that is run.
 	SuiteName string `json:"suiteName"`
-	// TestResults contains the detailed test results of each test.
-	TestResults []TestRun `json:"testResults"`
 	// Result is the outcome of the entire test suite run.
 	Result Result `json:"result"`
 	// TestFilter filters out a subset of the tests and skips the
@@ -23,12 +21,6 @@ type TestSuiteRun struct {
 	TestFilterRegex *regexp.Regexp
 	// Tests counts the total amount of tests in the suite.
 	Tests int `json:"tests"`
-	// Passed counts the number of passed tests.
-	Passed int `json:"passed"`
-	// Skipped counts the number of skipped tests.
-	Skipped int `json:"skipped"`
-	// Failed counts the number of failed tests.
-	Failed int `json:"failed"`
 	// Scheduled is the time when the test was triggered, e.g.
 	// through a http call.
 	Scheduled time.Time `json:"scheduled"`
@@ -44,12 +36,20 @@ type TestSuiteRun struct {
 	TriggeredBy string `json:"triggeredBy"`
 	// Environment is additional information on where the tests are run (e.g. cluster name).
 	Environment string `json:"environment"`
+	// TestResults contains the detailed test results of each test.
+	TestResults []TestRun `json:"testResults"`
 }
 
 type TestRun struct {
-	Name string `json:"name"`
+	SuiteName  string `json:"suiteName"`
+	SuiteRunID int    `json:"suiteRunId"`
+	Name       string `json:"name"`
 	// Result is the outcome of the test run.
 	Result Result `json:"result"`
+	// Test run attempt counter
+	Attempt int `json:"attempt"`
+	// Was this test attempt manually rerun/forced?
+	Forced bool `json:"forced"`
 	// Logs contains log messages written by the test itself.
 	Logs string `json:"logs"`
 	// Start marks the start time of the test run.
@@ -58,12 +58,22 @@ type TestRun struct {
 	End time.Time `json:"end"`
 	// DurationInMS is the duration of the test run in milliseconds (end-start).
 	DurationInMS int64 `json:"durationInMs"`
-	// RunContext is data that can be set by the test. This can be used
-	// to add additional context to the test run, e.g. correlation ids.
-	RunContext map[string]any `json:"runContext"`
-	// PluginContext contains per plugin information that was created from
-	// a test run and can be used to show additional information to a developer.
-	PluginContext map[string]any
+	// Context contains additional testrun specific information that is collected during and
+	// after a test run either by the test itself (`t.SetContext`) or via plugins. This can
+	// e.g. contain correlation ids or links to external services that may help debugging a test run
+	// (among other things).
+	Context TestContext `json:"context"`
+}
+
+func (t TestRun) NewForcedAttempt() TestRun {
+	return TestRun{
+		SuiteName:  t.SuiteName,
+		SuiteRunID: t.SuiteRunID,
+		Name:       t.Name,
+		Result:     ResultPending,
+		Forced:     true,
+		Start:      time.Now(),
+	}
 }
 
 type Result string
@@ -75,6 +85,12 @@ const (
 	ResultFailed      Result = "failed"
 	ResultSetupFailed Result = "setup-failed"
 )
+
+type TestContext map[string]any
+
+func (c TestContext) Merge(c2 TestContext) {
+	// TODO merge c2 into c1
+}
 
 type TestFunc func(t TB)
 
@@ -88,13 +104,23 @@ type TestSuite struct {
 	AssociatedService string `json:"associatedService"`
 	Setup             func() error
 	Teardown          func() error
-	Tests             []Test
+	Tests             map[string]TestFunc
 }
 
-type Test struct {
-	// The name of the function which is set by fetching the functions name via reflection.
-	Name string
-	Func TestFunc
+func (t TestSuite) FilterTests(filter *regexp.Regexp) map[string]TestFunc {
+	if filter == nil {
+		return t.Tests
+	}
+
+	filteredtests := map[string]TestFunc{}
+
+	for testName, testFunc := range t.Tests {
+		if filter.MatchString(testName) {
+			filteredtests[testName] = testFunc
+		}
+	}
+
+	return filteredtests
 }
 
 // TB is a carbon copy of the stdlib testing.TB interface. Unfortunately we cannot reuse

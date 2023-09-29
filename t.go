@@ -2,21 +2,26 @@ package handoff
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/raphi011/handoff/internal/model"
+	"golang.org/x/exp/slog"
 )
 
 // make sure we adhere to the TB interface
 var _ TB = &t{}
 
 type t struct {
-	name       string
-	logs       string
-	result     model.Result
-	runContext map[string]any
+	suiteName      string
+	testName       string
+	logs           strings.Builder
+	result         model.Result
+	runtimeContext map[string]any
+	cleanupFunc    func()
 }
 
-func (t *t) Cleanup(func()) {
+func (t *t) Cleanup(c func()) {
+	t.cleanupFunc = c
 }
 
 func (t *t) Error(args ...any) {
@@ -55,15 +60,15 @@ func (t *t) Fatalf(format string, args ...any) {
 func (t *t) Helper() {}
 
 func (t *t) Log(args ...any) {
-	t.logs += fmt.Sprint(args...) + "\n"
+	t.logs.WriteString(fmt.Sprint(args...) + "\n")
 }
 
 func (t *t) Logf(format string, args ...any) {
-	t.logs += fmt.Sprintf(format, args...) + "\n"
+	t.logs.WriteString(fmt.Sprintf(format, args...) + "\n")
 }
 
 func (t *t) Name() string {
-	return t.name
+	return t.testName
 }
 
 func (t *t) Setenv(key, value string) {
@@ -89,11 +94,19 @@ func (t *t) Skipped() bool {
 }
 
 func (t *t) TempDir() string {
+	// TODO
 	return ""
 }
 
+/* Handoff specific functions that are not part of the testing.TB interface */
+/* ------------------------------------------------------------------------ */
+
+func (t *t) GetContext(key string) any {
+	return t.runtimeContext[key]
+}
+
 func (t *t) SetContext(key string, value any) {
-	t.runContext[key] = value
+	t.runtimeContext[key] = value
 }
 
 func (t *t) Result() model.Result {
@@ -102,6 +115,22 @@ func (t *t) Result() model.Result {
 	}
 
 	return t.result
+}
+
+func (t *t) runTestCleanup() {
+	if t.cleanupFunc == nil {
+		return
+	}
+
+	defer func() {
+		err := recover()
+
+		if err != nil {
+			slog.Warn("cleanup func panic'd", "error", err, "suite-name", t.suiteName, "test-name", t.testName)
+		}
+	}()
+
+	t.cleanupFunc()
 }
 
 // skipTestErr is passed to panic() to signal

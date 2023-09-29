@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/raphi011/handoff"
 	"github.com/raphi011/handoff/internal/model"
 )
 
@@ -22,10 +23,6 @@ func (p *ElasticSearchPlugin) Init() error {
 	return nil
 }
 
-func (p *ElasticSearchPlugin) Stop() error {
-	return nil
-}
-
 const (
 	logstashCorrelationIDKey = "elastic-search.correlationID"
 )
@@ -34,7 +31,7 @@ func (p *ElasticSearchPlugin) TestFinished(
 	suite model.TestSuite,
 	run model.TestSuiteRun,
 	testName string,
-	runContext map[string]any) {
+	runContext handoff.TestContext) {
 	p.fetchLogsByCorrelationID(runContext)
 }
 

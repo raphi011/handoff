@@ -42,10 +42,10 @@ func mapTestSuite(ts TestSuite) model.TestSuite {
 		AssociatedService: ts.AssociatedService,
 		Setup:             ts.Setup,
 		Teardown:          ts.Teardown,
+		Tests:             make(map[string]model.TestFunc),
 	}
-
 	for _, t := range ts.Tests {
-		mapped.Tests = append(mapped.Tests, model.Test{Name: testName(t), Func: t})
+		mapped.Tests[testName(t)] = t
 	}
 
 	return mapped

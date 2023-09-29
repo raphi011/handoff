@@ -7,15 +7,26 @@ import (
 	"github.com/raphi011/handoff/internal/model"
 )
 
-type event interface {
+type testSuiteEvent interface {
 	Apply(model.TestSuiteRun) model.TestSuiteRun
 	RunID() int
 	SuiteName() string
+	LoadTestRuns() bool
+}
+
+type testRunEvent interface {
+	Apply(model.TestRun) model.TestRun
+	RunID() int
+	SuiteName() string
+	Attempt() int
+	TestName() string
 }
 
 type testRunIdentifier struct {
 	runID     int
 	suiteName string
+	attempt   int
+	testName  string
 }
 
 func (e testRunIdentifier) SuiteName() string {
@@ -26,12 +37,38 @@ func (e testRunIdentifier) RunID() int {
 	return e.runID
 }
 
-type testRunStartedEvent struct {
-	testRunIdentifier
+func (e testRunIdentifier) Attempt() int {
+	return e.attempt
+}
+
+func (e testRunIdentifier) TestName() string {
+	return e.testName
+}
+
+type testSuiteRunEvent struct {
+	runID        int
+	suiteName    string
+	loadTestRuns bool
+}
+
+func (e testSuiteRunEvent) SuiteName() string {
+	return e.suiteName
+}
+
+func (e testSuiteRunEvent) RunID() int {
+	return e.runID
+}
+
+func (e testSuiteRunEvent) LoadTestRuns() bool {
+	return e.loadTestRuns
+}
+
+type testSuiteRunStartedEvent struct {
+	testSuiteRunEvent
 	start time.Time
 }
 
-func (e testRunStartedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
+func (e testSuiteRunStartedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 	timeNotSet := time.Time{}
 
 	// only set start time if it wasn't set before. This
@@ -43,42 +80,37 @@ func (e testRunStartedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 	return ts
 }
 
-type testRunFinishedEvent struct {
-	testRunIdentifier
+type testSuiteRunFinishedEvent struct {
+	testSuiteRunEvent
 	end time.Time
-	// skipped is the # of tests skipped by the run TestFilter
-	skipped int
 }
 
-func (e testRunFinishedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
+func (e testSuiteRunFinishedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 	ts.End = e.end
-
-	// todo: make sure test results contains every result
-	for _, r := range ts.TestResults {
-		ts.DurationInMS += r.DurationInMS
-	}
-
-	// add to skipped because each test can also call t.Skip()
-	ts.Skipped += e.skipped
 
 	result := model.ResultPassed
 
-	if ts.Failed > 0 {
-		result = model.ResultFailed
-	}
+	for _, r := range ts.TestResults {
+		// todo: only use latest attempts of each test
+		ts.DurationInMS += r.DurationInMS
 
+		if r.Result == model.ResultFailed {
+			result = model.ResultFailed
+			break
+		}
+	}
 	ts.Result = result
 
 	return ts
 }
 
-type testRunSetupFailedEvent struct {
-	testRunIdentifier
+type testSuiteRunSetupFailedEvent struct {
+	testSuiteRunEvent
 	end time.Time
 	err error
 }
 
-func (e testRunSetupFailedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
+func (e testSuiteRunSetupFailedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 	ts.Result = model.ResultSetupFailed
 	ts.End = e.end
 
@@ -87,15 +119,15 @@ func (e testRunSetupFailedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun
 
 type testFinishedEvent struct {
 	testRunIdentifier
-	start    time.Time
-	end      time.Time
-	result   model.Result
-	testName string
-	recovery any
-	logs     string
+	start       time.Time
+	end         time.Time
+	result      model.Result
+	recovery    any
+	logs        string
+	testContext model.TestContext
 }
 
-func (e testFinishedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
+func (e testFinishedEvent) Apply(ts model.TestRun) model.TestRun {
 	logs := e.logs
 
 	result := e.result
@@ -108,23 +140,12 @@ func (e testFinishedEvent) Apply(ts model.TestSuiteRun) model.TestSuiteRun {
 		}
 	}
 
-	switch e.result {
-	case model.ResultSkipped:
-		ts.Skipped++
-	case model.ResultPassed:
-		ts.Passed++
-	case model.ResultFailed:
-		ts.Failed++
-	}
-
-	ts.TestResults = append(ts.TestResults, model.TestRun{
-		Name:         e.testName,
-		Result:       result,
-		Logs:         logs,
-		Start:        e.start,
-		End:          e.end,
-		DurationInMS: e.end.Sub(e.start).Milliseconds(),
-	})
+	ts.Start = e.start
+	ts.End = e.end
+	ts.DurationInMS = e.end.Sub(e.start).Milliseconds()
+	ts.Result = result
+	ts.Logs = logs
+	ts.Context = e.testContext
 
 	return ts
 }

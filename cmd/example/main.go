@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math/rand"
 	"os"
 	"time"
 
@@ -15,6 +16,7 @@ func main() {
 		handoff.WithTestSuite(handoff.TestSuite{
 			Name: "my-app",
 			Tests: []handoff.TestFunc{
+				Flaky,
 				Sleep,
 				Success,
 				Panic,
@@ -32,6 +34,14 @@ func main() {
 		slog.Error(err.Error())
 		os.Exit(-1)
 	}
+}
+
+func Flaky(t handoff.TB) {
+	if rand.Intn(3) == 0 {
+		t.Fatal("flaky test failed")
+	}
+
+	t.Log("flaky test succeeded")
 }
 
 func Sleep(t handoff.TB) {
