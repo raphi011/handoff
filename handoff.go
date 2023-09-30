@@ -351,11 +351,12 @@ func (s *Handoff) runTestSuite(
 		}
 	}
 
-	latestTestAttempt := func(testName string) model.TestRun {
-		testResult := model.TestRun{}
-		for _, tr := range tsr.TestResults {
-			if tr.Name == testName && tr.Attempt > testResult.Attempt {
-				testResult = tr
+	latestTestAttempt := func(testName string) *model.TestRun {
+		testResult := &model.TestRun{}
+		for i := range tsr.TestResults {
+			t := &tsr.TestResults[i]
+			if t.Name == testName && t.Attempt > testResult.Attempt {
+				testResult = t
 			}
 		}
 
@@ -370,22 +371,24 @@ func (s *Handoff) runTestSuite(
 		tr := latestTestAttempt(testName)
 
 		if forceRun {
-			tr = tr.NewForcedAttempt()
+			forcedRun := tr.NewForcedAttempt()
 
 			var err error
-			tr.Attempt, err = s.storage.InsertForcedTestRun(ctx, tr)
+			forcedRun.Attempt, err = s.storage.InsertForcedTestRun(ctx, forcedRun)
 			if err != nil {
 				slog.Error("unable to persist forced test run", "error", err)
 				return
 			}
 
-			tsr.TestResults = append(tsr.TestResults, tr)
+			tsr.TestResults = append(tsr.TestResults, forcedRun)
+
+			tr = &tsr.TestResults[len(tsr.TestResults)-1]
 
 		} else if tr.Result != model.ResultPending {
 			continue
 		}
 
-		s.runTest(suite, tsr, tr)
+		s.runTest(suite, &tsr, tr)
 	}
 
 	if suite.Teardown != nil {
@@ -412,7 +415,7 @@ func (s *Handoff) runTestSuite(
 
 // runTest runs an individual test that is part of a test suite. This function must only be called
 // by `runTestSuite()`.
-func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun model.TestSuiteRun, testRun model.TestRun) {
+func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRun, testRun *model.TestRun) {
 	t := t{
 		suiteName:      suite.Name,
 		testName:       testRun.Name,
@@ -430,7 +433,7 @@ func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun model.TestSuiteRun
 
 		metric.TestRunsTotal.WithLabelValues(suite.AssociatedService, suite.Name, string(result)).Inc()
 
-		s.plugins.notifyTestFinished(suite, testSuiteRun, testRun.Name, t.runtimeContext)
+		s.plugins.notifyTestFinished(suite, *testSuiteRun, testRun.Name, t.runtimeContext)
 
 		logs := t.logs
 
@@ -449,11 +452,11 @@ func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun model.TestSuiteRun
 		testRun.Logs = logs.String()
 		testRun.Context = t.runtimeContext
 
-		if err := s.storage.UpdateTestRun(context.Background(), testRun); err != nil {
+		if err := s.storage.UpdateTestRun(context.Background(), *testRun); err != nil {
 			slog.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
 		}
 
-		s.plugins.notifyTestFinishedAync(suite, testSuiteRun, testRun.Name, t.runtimeContext)
+		s.plugins.notifyTestFinishedAync(suite, *testSuiteRun, testRun.Name, t.runtimeContext)
 
 		t.runTestCleanup()
 	}()
