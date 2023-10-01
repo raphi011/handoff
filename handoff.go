@@ -155,37 +155,24 @@ func (h *Handoff) loadTestSuiteFiles() error {
 			return fmt.Errorf("opening test suite file: %w", err)
 		}
 
-		suitesSymbol, _ := p.Lookup("TestSuites")
-		schedulesSymbol, _ := p.Lookup("TestSchedules")
-
-		if suitesSymbol == nil && schedulesSymbol == nil {
-			return errors.New("invalid test suite file, could not find function 'TestSuites' or 'TestSchedules'")
+		handoffSymbol, err := p.Lookup("Handoff")
+		if err != nil {
+			return fmt.Errorf("invalid test suite file: %w", err)
 		}
 
-		if suitesSymbol != nil {
-			loadTestSuites, ok := suitesSymbol.(func() []TestSuite)
-			if !ok {
-				return errors.New("invalid test suite plugin, expected signature `func TestSuites() []TestSuite``")
-			}
-
-			suites := loadTestSuites()
-
-			for _, suite := range suites {
-				testSuitesLoaded++
-				h.readOnlyTestSuites[suite.Name] = mapTestSuite(suite)
-			}
+		handoffFunc, ok := handoffSymbol.(func() ([]TestSuite, []ScheduledRun))
+		if !ok {
+			return errors.New("invalid test suite plugin, expected signature `func TestSuites() []TestSuite``")
 		}
 
-		if schedulesSymbol != nil {
-			loadTestSchedules, ok := schedulesSymbol.(func() []ScheduledRun)
-			if !ok {
-				return errors.New("invalid test suite plugin, expected signature `TestSchedules) []ScheduledRun`")
-			}
+		suites, schedules := handoffFunc()
 
-			schedules := loadTestSchedules()
-
-			h.schedules = append(h.schedules, schedules...)
+		for _, suite := range suites {
+			testSuitesLoaded++
+			h.readOnlyTestSuites[suite.Name] = mapTestSuite(suite)
 		}
+
+		h.schedules = append(h.schedules, schedules...)
 	}
 
 	slog.Info(fmt.Sprintf("Loaded %d test suites from plugin files", testSuitesLoaded))

@@ -4,7 +4,24 @@ Handoff is a library that allows you to bootstrap a server that runs scheduled a
 
 ## Example
 
-See [the example app](./cmd/example/main.go).
+There are several ways to setup a handoff server: 
+
+1. Build the `./cmd/handoff` binary and your custom test suite libraries (see `./cmd/example-test-library`) and pass in the libraries via the commandline:
+
+```sh
+go install github.com/raphi011/handoff/cmd/handoff
+go build -buildmode plugin -o example-test-library ./cmd/example-test-library
+handoff ./example-test-library
+```
+
+A test suite library needs to include a public function with signature `func Handoff() ([]handoff.TestSuite, []handoff.ScheduledRun)`.
+
+2. Bootstrap a handoff server yourself by importing the library (see `./cmd/example-server-bootstrap`) and calling `handoff.New().Run()` with tests 
+defined in the same repository and passed in via the `handoff.WithTestSuite()` option.
+
+3. Bootstrap a handoff server and import `TestSuite`s from external packages. This is a handy approach if multiple teams use the same server to run their tests as the tests can live in separate codebases.
+
+4. A combination of 2 & 3.
 
 ## Planned features
 
@@ -18,9 +35,10 @@ See [the example app](./cmd/example/main.go).
 - [ ] (Feature) Flaky test detection + metric
 - [ ] (Feature) Add test-suite labels (e.g. instead of "associated service", "team name" attributes)
 - [ ] (Feature) Add support for async plugins in case they need to do slow operations such as http calls
-- [ ] (Feature) Configuration through either ENV vars or cli flags
 - [ ] (Feature) Asynchronous plugin hooks with callbacks for slow operations (e.g. http calls)
 - [ ] (Technical) Limit the number of concurrent test runs via a configuration option
+- [ ] (Technical) Comprehensive test suite
+- [ ] (Technical) Server configuration through either ENV vars or cli flags
 - [ ] (Technical) Websocket that streams test results (like test logs)
 - [ ] (Technical) Authenticated HTTP requests through TLS client certificates
 - [ ] (Technical) Continue test runs on service restart
@@ -29,6 +47,7 @@ See [the example app](./cmd/example/main.go).
 - [ ] (Plugin) Github - pr status checks
 - [ ] (Plugin) Prometheus / Loki / Tempo / ELK stack - find and fetch logs/traces/metrics that are created by tests (e.g. for easier debugging) - e.g. via correlation ids
 - [x] (Technical) Graceful server shutdown
+- [x] (Technical) Loading of `TestSuite`s via shared libraries.
 - [x] (Technical) SQLite Persistence layer
 - [x] (Feature) Basic webui that shows test run results
 - [x] (Feature) Start test runs via POST requests
