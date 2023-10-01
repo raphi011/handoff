@@ -31,12 +31,10 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 - [ ] (Feature) Configurable test run retention policy
 - [ ] (Feature) Manual retrying of failed tests
 - [ ] (Feature) Grafana service dashboard template
-- [ ] (Feature) Soft test fails that don't fail the entire testsuite. This can be used to help with the chicken/egg problem when you add new tests that target a new service version that is not deployed yet.
 - [ ] (Feature) Flaky test detection + metric
 - [ ] (Feature) Add test-suite labels (e.g. instead of "associated service", "team name" attributes)
 - [ ] (Feature) Add support for async plugins in case they need to do slow operations such as http calls
 - [ ] (Feature) Asynchronous plugin hooks with callbacks for slow operations (e.g. http calls)
-- [ ] (Technical) Limit the number of concurrent test runs via a configuration option
 - [ ] (Technical) Comprehensive test suite
 - [ ] (Technical) Continue test runs on service restart
 - [ ] (Plugin) Pagerduty - triger alerts/incidents on failed e2e tests
@@ -47,6 +45,7 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 - [x] (Technical) Graceful server shutdown
 - [x] (Technical) Loading of `TestSuite`s via shared libraries.
 - [x] (Technical) SQLite Persistence layer
+- [x] (Feature) Soft test fails that don't fail the entire testsuite. This can be used to help with the chicken/egg problem when you add new tests that target a new service version that is not deployed yet.
 - [x] (Feature) Basic webui that shows test run results
 - [x] (Feature) Start test runs via POST requests
 - [x] (Feature) Write test suites with multiple tests written in Go
@@ -59,6 +58,7 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 
 ## Potential features
 
+- [ ] (Technical) Limit the number of concurrent test runs via a configuration option
 - [ ] (Technical) Websocket that streams test results (like test logs)
 - [ ] (Technical) Authenticated HTTP requests through TLS client certificates
 - [ ] (Feature) Server mode + cli mode

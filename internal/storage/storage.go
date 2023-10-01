@@ -286,7 +286,7 @@ func (s *Storage) LoadTestRuns(ctx context.Context, suiteName string, tsrID int)
 
 	runs := []model.TestRun{}
 	r, err := db.NamedQuery(`SELECT 
-		suiteName, suiteRunId, testName, attempt, result, logs, context, startTime, endTime
+		suiteName, suiteRunId, testName, attempt, result, logs, context, startTime, endTime, softFailure
 		FROM TestRun WHERE suiteName=:suiteName and suiteRunId=:suiteRunId`,
 		map[string]any{
 			"suiteRunId": tsrID,
@@ -314,7 +314,7 @@ func (s *Storage) LoadTestRun(ctx context.Context, suiteName string, tsrID int, 
 	db := s.getDB(ctx)
 
 	r, err := db.NamedQuery(`SELECT 
-		suiteName, suiteRunId, testName, attempt, result, logs, context, startTime, endTime
+		suiteName, suiteRunId, testName, attempt, result, logs, context, startTime, endTime, softFailure
 		FROM TestRun WHERE suiteName=:suiteName and suiteRunId=:suiteRunId and testName=:testName and attempt=:attempt`,
 		map[string]any{
 			"suiteRunId": tsrID,
@@ -343,18 +343,19 @@ func (s *Storage) InsertTestRun(ctx context.Context, tr model.TestRun) error {
 
 	db := s.getDB(ctx)
 	_, err = db.NamedExecContext(ctx, `INSERT INTO TestRun
-	(suiteName, suiteRunId, testName, result, logs, context, startTime, endTime, attempt) VALUES
-	(:suiteName, :suiteRunId, :testName, :result, :logs, :context, :startTime, :endTime, :attempt)`,
+	(suiteName, suiteRunId, testName, result, logs, context, startTime, endTime, attempt, softFailure) VALUES
+	(:suiteName, :suiteRunId, :testName, :result, :logs, :context, :startTime, :endTime, :attempt, :softFailure)`,
 		map[string]any{
-			"suiteName":  tr.SuiteName,
-			"suiteRunId": tr.SuiteRunID,
-			"testName":   tr.Name,
-			"result":     tr.Result,
-			"logs":       tr.Logs,
-			"context":    string(testContext),
-			"startTime":  timeFormat(tr.Start),
-			"endTime":    timeFormat(tr.End),
-			"attempt":    tr.Attempt,
+			"suiteName":   tr.SuiteName,
+			"suiteRunId":  tr.SuiteRunID,
+			"testName":    tr.Name,
+			"result":      tr.Result,
+			"logs":        tr.Logs,
+			"context":     string(testContext),
+			"startTime":   timeFormat(tr.Start),
+			"endTime":     timeFormat(tr.End),
+			"attempt":     tr.Attempt,
+			"softFailure": tr.SoftFailure,
 		})
 	if err != nil {
 		return err
@@ -371,19 +372,20 @@ func (s *Storage) InsertForcedTestRun(ctx context.Context, tr model.TestRun) (in
 
 	db := s.getDB(ctx)
 	r, err := db.NamedQuery(`INSERT INTO TestRun
-	(suiteName, suiteRunId, testName, result, logs, context, startTime, endTime, attempt) VALUES
-	(:suiteName, :suiteRunId, :testName, :result, :logs, :context, :startTime, :endTime, 
+	(suiteName, suiteRunId, testName, result, logs, context, startTime, endTime, softFailure, attempt) VALUES
+	(:suiteName, :suiteRunId, :testName, :result, :logs, :context, :startTime, :endTime, :softFailure,
 		COALESCE(select max(attempt)+1 from TestRun where suiteName=:suiteName and suiteRunId=:suiteRunId and testName=:testName, 1)
 	RETURNING attempt`,
 		map[string]any{
-			"suiteName":  tr.SuiteName,
-			"suiteRunId": tr.SuiteRunID,
-			"testName":   tr.Name,
-			"result":     tr.Result,
-			"logs":       tr.Logs,
-			"context":    string(testContext),
-			"startTime":  timeFormat(tr.Start),
-			"endTime":    timeFormat(tr.End),
+			"suiteName":   tr.SuiteName,
+			"suiteRunId":  tr.SuiteRunID,
+			"testName":    tr.Name,
+			"result":      tr.Result,
+			"logs":        tr.Logs,
+			"context":     string(testContext),
+			"startTime":   timeFormat(tr.Start),
+			"endTime":     timeFormat(tr.End),
+			"softFailure": tr.SoftFailure,
 		})
 	if err != nil {
 		return -1, err
@@ -413,18 +415,19 @@ func (s *Storage) UpdateTestRun(ctx context.Context, tr model.TestRun) error {
 
 	db := s.getDB(ctx)
 	r, err := db.NamedExecContext(ctx, `UPDATE TestRun SET
-	result=:result, logs=:logs, startTime=:startTime, endTime=:endTime, context=:context
+	result=:result, logs=:logs, startTime=:startTime, endTime=:endTime, context=:context, softFailure=:softFailure
 	WHERE suiteName=:suiteName and suiteRunId=:suiteRunId and testName=:testName and attempt=:attempt`,
 		map[string]any{
-			"suiteName":  tr.SuiteName,
-			"suiteRunId": tr.SuiteRunID,
-			"testName":   tr.Name,
-			"attempt":    tr.Attempt,
-			"result":     tr.Result,
-			"logs":       tr.Logs,
-			"context":    string(testContext),
-			"startTime":  timeFormat(tr.Start),
-			"endTime":    timeFormat(tr.End),
+			"suiteName":   tr.SuiteName,
+			"suiteRunId":  tr.SuiteRunID,
+			"testName":    tr.Name,
+			"attempt":     tr.Attempt,
+			"result":      tr.Result,
+			"logs":        tr.Logs,
+			"context":     string(testContext),
+			"startTime":   timeFormat(tr.Start),
+			"endTime":     timeFormat(tr.End),
+			"softFailure": tr.SoftFailure,
 		})
 	if err != nil {
 		return fmt.Errorf("update statement failed")
@@ -462,6 +465,7 @@ func scanTestRun(r *sqlx.Rows) (model.TestRun, error) {
 		&testContext,
 		&start,
 		&end,
+		&tr.SoftFailure,
 	)
 	if err != nil {
 		return model.TestRun{}, fmt.Errorf("scanning test suite run: %w", err)

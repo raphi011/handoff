@@ -14,6 +14,12 @@ import (
 func main() {
 	h := handoff.New(
 		handoff.WithTestSuite(handoff.TestSuite{
+			Name: "soft-failure",
+			Tests: []handoff.TestFunc{
+				SoftFailure,
+			},
+		}),
+		handoff.WithTestSuite(handoff.TestSuite{
 			Name: "my-app",
 			Tests: []handoff.TestFunc{
 				Flaky,
@@ -34,6 +40,12 @@ func main() {
 		slog.Error(err.Error())
 		os.Exit(-1)
 	}
+}
+
+func SoftFailure(t handoff.TB) {
+	t.SoftFailure()
+
+	t.Fail()
 }
 
 func Flaky(t handoff.TB) {

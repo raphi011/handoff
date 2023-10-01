@@ -56,7 +56,7 @@ type config struct {
 
 	// TestSuiteLibraryFiles is a list of library files that will load
 	// additional test suites and scheduled runs.
-	TestSuiteLibraryFiles []string `arg:"positional" help:"optional list of test suite library files"`
+	TestSuiteLibraryFiles []string `arg:"-t,--testsuite,env:HANDOFF_TESTSUITE_FILE" help:"optional list of test suite library files"`
 
 	// List will, if set to true, print all loaded test suites
 	// and immediately exit.
@@ -69,7 +69,7 @@ type config struct {
 
 func (c config) Version() string {
 	// TODO: use debug/buildinfo to fetch git info?
-	return "Handoff alpha"
+	return "Handoff (alpha)"
 }
 
 // TestSuite represents the external view of the Testsuite to allow users of the library
@@ -450,7 +450,7 @@ func (s *Handoff) runTestSuite(
 // runTest runs an individual test that is part of a test suite. This function must only be called
 // by `runTestSuite()`.
 func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRun, testRun *model.TestRun) {
-	t := t{
+	t := T{
 		suiteName:      suite.Name,
 		testName:       testRun.Name,
 		runtimeContext: map[string]any{},
@@ -483,6 +483,7 @@ func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRu
 		testRun.End = end
 		testRun.DurationInMS = end.Sub(start).Milliseconds()
 		testRun.Result = result
+		testRun.SoftFailure = t.softFailure
 		testRun.Logs = logs.String()
 		testRun.Context = t.runtimeContext
 

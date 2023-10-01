@@ -29,6 +29,8 @@ CREATE TABLE TestRun(
     result TEXT NOT NULL, 
     logs TEXT NOT NULL,
 
+    softFailure INTEGER NOT NULL,
+
     startTime TEXT NOT NULL,
     endTime TEXT NOT NULL,
 

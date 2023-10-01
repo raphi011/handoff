@@ -9,91 +9,92 @@ import (
 )
 
 // make sure we adhere to the TB interface
-var _ TB = &t{}
+var _ model.TB = &T{}
 
-type t struct {
+type T struct {
 	suiteName      string
 	testName       string
 	logs           strings.Builder
 	result         model.Result
 	runtimeContext map[string]any
 	cleanupFunc    func()
+	softFailure    bool
 }
 
-func (t *t) Cleanup(c func()) {
+func (t *T) Cleanup(c func()) {
 	t.cleanupFunc = c
 }
 
-func (t *t) Error(args ...any) {
+func (t *T) Error(args ...any) {
 	t.result = model.ResultFailed
 	t.Log(args...)
 }
 
-func (t *t) Errorf(format string, args ...any) {
+func (t *T) Errorf(format string, args ...any) {
 	t.result = model.ResultFailed
 	t.Logf(format, args...)
 }
 
-func (t *t) Fail() {
+func (t *T) Fail() {
 	t.result = model.ResultFailed
 }
 
-func (t *t) FailNow() {
+func (t *T) FailNow() {
 	t.result = model.ResultFailed
 	panic(failTestErr{})
 }
 
-func (t *t) Failed() bool {
+func (t *T) Failed() bool {
 	return t.result == model.ResultFailed
 }
 
-func (t *t) Fatal(args ...any) {
+func (t *T) Fatal(args ...any) {
 	t.Error(args...)
 	panic(failTestErr{})
 }
 
-func (t *t) Fatalf(format string, args ...any) {
+func (t *T) Fatalf(format string, args ...any) {
 	t.Errorf(format, args...)
 	panic(failTestErr{})
 }
 
-func (t *t) Helper() {}
+func (t *T) Helper() {}
 
-func (t *t) Log(args ...any) {
+func (t *T) Log(args ...any) {
 	t.logs.WriteString(fmt.Sprint(args...) + "\n")
 }
 
-func (t *t) Logf(format string, args ...any) {
+func (t *T) Logf(format string, args ...any) {
 	t.logs.WriteString(fmt.Sprintf(format, args...) + "\n")
 }
 
-func (t *t) Name() string {
+func (t *T) Name() string {
 	return t.testName
 }
 
-func (t *t) Setenv(key, value string) {
+func (t *T) Setenv(key, value string) {
 }
 
-func (t *t) Skip(args ...any) {
+func (t *T) Skip(args ...any) {
 	t.Log(args...)
 	t.SkipNow()
 }
 
-func (t *t) SkipNow() {
+func (t *T) SkipNow() {
 	t.result = model.ResultSkipped
 	panic(skipTestErr{})
 }
 
-func (t *t) Skipf(format string, args ...any) {
+func (t *T) Skipf(format string, args ...any) {
 	t.Logf(format, args...)
 	t.SkipNow()
 }
 
-func (t *t) Skipped() bool {
+func (t *T) Skipped() bool {
 	return t.result == model.ResultSkipped
 }
 
-func (t *t) TempDir() string {
+func (t *T) TempDir() string {
 	// TODO
 	return ""
 }
@@ -101,15 +102,19 @@ func (t *t) TempDir() string {
 /* Handoff specific functions that are not part of the testing.TB interface */
 /* ------------------------------------------------------------------------ */
 
-func (t *t) GetContext(key string) any {
+func (t *T) GetContext(key string) any {
 	return t.runtimeContext[key]
 }
 
-func (t *t) SetContext(key string, value any) {
+func (t *T) SoftFailure() {
+	t.softFailure = true
+}
+
+func (t *T) SetContext(key string, value any) {
 	t.runtimeContext[key] = value
 }
 
-func (t *t) Result() model.Result {
+func (t *T) Result() model.Result {
 	if t.result == "" {
 		return model.ResultPassed
 	}
@@ -117,7 +122,7 @@ func (t *t) Result() model.Result {
 	return t.result
 }
 
-func (t *t) runTestCleanup() {
+func (t *T) runTestCleanup() {
 	if t.cleanupFunc == nil {
 		return
 	}

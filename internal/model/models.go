@@ -48,7 +48,7 @@ func (tsr TestSuiteRun) ResultFromTestResults() Result {
 			return ResultPending
 		}
 
-		if r.Result == ResultFailed {
+		if r.Result == ResultFailed && !r.SoftFailure {
 			result = ResultFailed
 		}
 	}
@@ -76,6 +76,8 @@ type TestRun struct {
 	Attempt int `json:"attempt"`
 	// Was this test attempt manually rerun/forced?
 	Forced bool `json:"forced"`
+	// SoftFailure if set to true, does not fail a test suite when the test run fails.
+	SoftFailure bool `json:"softFailure"`
 	// Logs contains log messages written by the test itself.
 	Logs string `json:"logs"`
 	// Start marks the start time of the test run.
@@ -149,7 +151,7 @@ func (t TestSuite) FilterTests(filter *regexp.Regexp) map[string]TestFunc {
 	return filteredtests
 }
 
-// TB is a carbon copy of the stdlib testing.TB interface. Unfortunately we cannot reuse
+// TB is a carbon copy of the stdlib testing.TB interface + some custom handoff functions. Unfortunately we cannot reuse
 // the original testing.TB interface because it deliberately includes the `private()` function
 // to prevent others from implementing it to allow them to add new functions over time without
 // breaking anything.
@@ -172,4 +174,7 @@ type TB interface {
 	Skipf(format string, args ...any)
 	Skipped() bool
 	TempDir() string
+
+	/* Handoff specific */
+	SoftFailure()
 }
