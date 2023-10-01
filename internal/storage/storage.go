@@ -157,11 +157,11 @@ type commonDB interface {
 func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) (int, error) {
 	db := s.getDB(ctx)
 
-	r, err := db.NamedExecContext(ctx, `INSERT INTO TestSuiteRun 
+	r, err := db.NamedQuery(`INSERT INTO TestSuiteRun 
 	(suiteName, environment, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, id) VALUES
 	(:suiteName, :environment, :result, :testFilter, :scheduledTime, :startTime, :endTime, :setupLogs, :triggeredBy, 
-		COALESCE((select max(id)+1 from TestSuiteRun where suiteName=:suiteName), 1)
-		)`,
+		COALESCE((select max(id)+1 from TestSuiteRun where suiteName=:suiteName), 1))
+	RETURNING id`,
 		map[string]any{
 			"suiteName":     tsr.SuiteName,
 			"environment":   tsr.Environment,
@@ -177,12 +177,18 @@ func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) 
 		return -1, err
 	}
 
-	id, err := r.LastInsertId()
-	if err != nil {
-		return -1, fmt.Errorf("retrieving inserted TestSuiteRun id: %w", err)
+	if !r.Next() {
+		return -1, fmt.Errorf("retrieving inserted TestSuiteRun id")
 	}
 
-	return int(id), nil
+	var id int
+
+	if err = r.Scan(&id); err != nil {
+		return -1, fmt.Errorf("retrieving inserted TestSuiteRun id: %w", err)
+
+	}
+
+	return id, nil
 }
 
 func (s *Storage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) error {

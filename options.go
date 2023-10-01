@@ -12,7 +12,7 @@ import (
 // This can be overridden by flags.
 func WithServerPort(port int) option {
 	return func(s *Handoff) {
-		s.port = port
+		s.config.port = port
 	}
 }
 
@@ -21,6 +21,12 @@ func WithServerPort(port int) option {
 func WithScheduledRun(sr ScheduledRun) option {
 	return func(s *Handoff) {
 		s.schedules = append(s.schedules, sr)
+	}
+}
+
+func WithTestSuiteFiles(files []string) option {
+	return func(s *Handoff) {
+		s.config.testSuitePluginFiles = files
 	}
 }
 

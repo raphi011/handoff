@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"plugin"
 	"regexp"
 	"strings"
 	"sync"
@@ -22,18 +23,7 @@ import (
 )
 
 type Handoff struct {
-	// port for the web api
-	port int
-	// location of the sqlite database file, if empty we default
-	// to an in-memory database.
-	databaseFilePath string
-
-	// environment is e.g. the cluster/platform the tests are run on.
-	// This is added to metrics and the testrun information.
-	environment string
-
-	// Max concurrent test suite runs (this doesn't work yet).
-	maxConcurrentRuns int
+	config config
 
 	// configured plugins
 	plugins *pluginManager
@@ -53,6 +43,25 @@ type Handoff struct {
 	httpServer *http.Server
 
 	storage *storage.Storage
+}
+
+type config struct {
+	// port for the web api
+	port int
+	// location of the sqlite database file, if empty we default
+	// to an in-memory database.
+	databaseFilePath string
+
+	testSuitePluginFiles []string
+
+	printTestSuites bool
+
+	// environment is e.g. the cluster/platform the tests are run on.
+	// This is added to metrics and the testrun information.
+	environment string
+
+	// Max concurrent test suite runs (this doesn't work yet).
+	maxConcurrentRuns int
 }
 
 // TestSuite represents the external view of the Testsuite to allow users of the library
@@ -81,7 +90,9 @@ type option func(s *Handoff)
 // New configures a new Handoff instance.
 func New(opts ...option) *Handoff {
 	h := &Handoff{
-		port:               1337,
+		config: config{
+			port: 1337,
+		},
 		readOnlyTestSuites: map[string]model.TestSuite{},
 	}
 
@@ -97,6 +108,16 @@ func New(opts ...option) *Handoff {
 func (h *Handoff) Run() error {
 	h.parseFlags()
 
+	if len(h.config.testSuitePluginFiles) > 0 {
+		if err := h.loadTestSuiteFiles(); err != nil {
+			return fmt.Errorf("loading test suite files: %w", err)
+		}
+	}
+
+	if h.config.printTestSuites {
+		h.printTestSuites()
+	}
+
 	if err := h.plugins.init(); err != nil {
 		return fmt.Errorf("init plugins: %w", err)
 	}
@@ -104,7 +125,7 @@ func (h *Handoff) Run() error {
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	db, err := storage.New(h.databaseFilePath)
+	db, err := storage.New(h.config.databaseFilePath)
 	if err != nil {
 		return fmt.Errorf("init storage: %w", err)
 	}
@@ -121,6 +142,53 @@ func (h *Handoff) Run() error {
 	signal := <-exit
 
 	h.gracefulShutdown(signal)
+
+	return nil
+}
+
+func (h *Handoff) loadTestSuiteFiles() error {
+	testSuitesLoaded := 0
+
+	for _, f := range h.config.testSuitePluginFiles {
+		p, err := plugin.Open(f)
+		if err != nil {
+			return fmt.Errorf("opening test suite file: %w", err)
+		}
+
+		suitesSymbol, _ := p.Lookup("TestSuites")
+		schedulesSymbol, _ := p.Lookup("TestSchedules")
+
+		if suitesSymbol == nil && schedulesSymbol == nil {
+			return errors.New("invalid test suite file, could not find function 'TestSuites' or 'TestSchedules'")
+		}
+
+		if suitesSymbol != nil {
+			loadTestSuites, ok := suitesSymbol.(func() []TestSuite)
+			if !ok {
+				return errors.New("invalid test suite plugin, expected signature `func TestSuites() []TestSuite``")
+			}
+
+			suites := loadTestSuites()
+
+			for _, suite := range suites {
+				testSuitesLoaded++
+				h.readOnlyTestSuites[suite.Name] = mapTestSuite(suite)
+			}
+		}
+
+		if schedulesSymbol != nil {
+			loadTestSchedules, ok := schedulesSymbol.(func() []ScheduledRun)
+			if !ok {
+				return errors.New("invalid test suite plugin, expected signature `TestSchedules) []ScheduledRun`")
+			}
+
+			schedules := loadTestSchedules()
+
+			h.schedules = append(h.schedules, schedules...)
+		}
+	}
+
+	slog.Info(fmt.Sprintf("Loaded %d test suites from plugin files", testSuitesLoaded))
 
 	return nil
 }
@@ -159,7 +227,7 @@ func (s *Handoff) gracefulShutdown(signal os.Signal) {
 }
 
 func (s *Handoff) parseFlags() {
-	var port = flag.Int("p", s.port, "port used by the server (server mode only)")
+	var port = flag.Int("p", s.config.port, "port used by the server (server mode only)")
 	var listTestSuites = flag.Bool("l", false, "list all configured test suites and exit")
 	var databaseFile = flag.String("d", "handoff.db", "database file location")
 	var environment = flag.String("e", "", "the environment where the tests are run")
@@ -167,19 +235,17 @@ func (s *Handoff) parseFlags() {
 
 	flag.Parse()
 
-	if *listTestSuites {
-		s.printTestSuites()
-	}
-
 	if *maxConcurrentRuns < 1 {
 		flag.Usage()
 		os.Exit(-1)
 	}
 
-	s.port = *port
-	s.databaseFilePath = *databaseFile
-	s.environment = *environment
-	s.maxConcurrentRuns = *maxConcurrentRuns
+	s.config.testSuitePluginFiles = flag.Args()
+	s.config.printTestSuites = *listTestSuites
+	s.config.port = *port
+	s.config.databaseFilePath = *databaseFile
+	s.config.environment = *environment
+	s.config.maxConcurrentRuns = *maxConcurrentRuns
 }
 
 func (s *Handoff) printTestSuites() {
@@ -260,7 +326,7 @@ func (s *Handoff) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, t
 		Tests:           len(ts.Tests),
 		Scheduled:       time.Now(),
 		TriggeredBy:     triggeredBy,
-		Environment:     s.environment,
+		Environment:     s.config.environment,
 	}
 
 	ctx, err := s.storage.StartTransaction(context.Background())
