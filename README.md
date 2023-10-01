@@ -38,14 +38,12 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 - [ ] (Feature) Asynchronous plugin hooks with callbacks for slow operations (e.g. http calls)
 - [ ] (Technical) Limit the number of concurrent test runs via a configuration option
 - [ ] (Technical) Comprehensive test suite
-- [ ] (Technical) Server configuration through either ENV vars or cli flags
-- [ ] (Technical) Websocket that streams test results (like test logs)
-- [ ] (Technical) Authenticated HTTP requests through TLS client certificates
 - [ ] (Technical) Continue test runs on service restart
 - [ ] (Plugin) Pagerduty - triger alerts/incidents on failed e2e tests
 - [ ] (Plugin) Slack - send messages to slack channels when tests pass / fail
 - [ ] (Plugin) Github - pr status checks
 - [ ] (Plugin) Prometheus / Loki / Tempo / ELK stack - find and fetch logs/traces/metrics that are created by tests (e.g. for easier debugging) - e.g. via correlation ids
+- [x] (Technical) Server configuration through either ENV vars or cli flags
 - [x] (Technical) Graceful server shutdown
 - [x] (Technical) Loading of `TestSuite`s via shared libraries.
 - [x] (Technical) SQLite Persistence layer
@@ -61,6 +59,8 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 
 ## Potential features
 
+- [ ] (Technical) Websocket that streams test results (like test logs)
+- [ ] (Technical) Authenticated HTTP requests through TLS client certificates
 - [ ] (Feature) Server mode + cli mode
 - [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
 - [ ] (Feature) Output go test json report

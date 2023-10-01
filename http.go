@@ -42,11 +42,11 @@ func (s *Handoff) runHTTP() error {
 	router.GET("/suites/:suite-name/runs/:run-id", s.getTestSuiteRun)
 	router.GET("/suites/:suite-name/runs/:run-id/test/:test-name", s.getTestRunResult)
 
-	slog.Info("Starting http server", "port", s.config.port)
+	slog.Info("Starting http server", "port", s.config.Port)
 
 	s.httpServer = &http.Server{
 		Handler: router,
-		Addr:    fmt.Sprintf(":%d", s.config.port),
+		Addr:    fmt.Sprintf(":%d", s.config.Port),
 		// TODO: set reasonable timeouts
 	}
 

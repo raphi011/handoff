@@ -3,7 +3,6 @@ package handoff
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alexflint/go-arg"
 	"github.com/raphi011/handoff/internal/metric"
 	"github.com/raphi011/handoff/internal/model"
 	"github.com/raphi011/handoff/internal/storage"
@@ -23,6 +23,7 @@ import (
 )
 
 type Handoff struct {
+	// server configuration
 	config config
 
 	// configured plugins
@@ -46,22 +47,29 @@ type Handoff struct {
 }
 
 type config struct {
-	// port for the web api
-	port int
+	// Port for the web api
+	Port int `arg:"-p,env:HANDOFF_PORT" help:"port used by the server (server mode only)" default:"1337"`
+
 	// location of the sqlite database file, if empty we default
 	// to an in-memory database.
-	databaseFilePath string
+	DatabaseFilePath string `arg:"-d,--database,env:HANDOFF_DATABASE" help:"database file location" default:"handoff.db"`
 
-	testSuitePluginFiles []string
+	// TestSuiteLibraryFiles is a list of library files that will load
+	// additional test suites and scheduled runs.
+	TestSuiteLibraryFiles []string `arg:"positional" help:"optional list of test suite library files"`
 
-	printTestSuites bool
+	// List will, if set to true, print all loaded test suites
+	// and immediately exit.
+	ListTestSyutes bool `arg:"-l,--list" help:"list all configured test suites and exit" default:"false"`
 
-	// environment is e.g. the cluster/platform the tests are run on.
+	// Environment is e.g. the cluster/platform the tests are run on.
 	// This is added to metrics and the testrun information.
-	environment string
+	Environment string `arg:"-e,--env,env:HANDOFF_ENVIRONMENT" help:"the environment where the tests are run"`
+}
 
-	// Max concurrent test suite runs (this doesn't work yet).
-	maxConcurrentRuns int
+func (c config) Version() string {
+	// TODO: use debug/buildinfo to fetch git info?
+	return "Handoff alpha"
 }
 
 // TestSuite represents the external view of the Testsuite to allow users of the library
@@ -91,7 +99,7 @@ type option func(s *Handoff)
 func New(opts ...option) *Handoff {
 	h := &Handoff{
 		config: config{
-			port: 1337,
+			Port: 1337,
 		},
 		readOnlyTestSuites: map[string]model.TestSuite{},
 	}
@@ -106,15 +114,13 @@ func New(opts ...option) *Handoff {
 }
 
 func (h *Handoff) Run() error {
-	h.parseFlags()
+	arg.MustParse(&h.config)
 
-	if len(h.config.testSuitePluginFiles) > 0 {
-		if err := h.loadTestSuiteFiles(); err != nil {
-			return fmt.Errorf("loading test suite files: %w", err)
-		}
+	if err := h.loadLibraryFiles(); err != nil {
+		return fmt.Errorf("loading test library files: %w", err)
 	}
 
-	if h.config.printTestSuites {
+	if h.config.ListTestSyutes {
 		h.printTestSuites()
 	}
 
@@ -125,7 +131,7 @@ func (h *Handoff) Run() error {
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	db, err := storage.New(h.config.databaseFilePath)
+	db, err := storage.New(h.config.DatabaseFilePath)
 	if err != nil {
 		return fmt.Errorf("init storage: %w", err)
 	}
@@ -146,10 +152,8 @@ func (h *Handoff) Run() error {
 	return nil
 }
 
-func (h *Handoff) loadTestSuiteFiles() error {
-	testSuitesLoaded := 0
-
-	for _, f := range h.config.testSuitePluginFiles {
+func (h *Handoff) loadLibraryFiles() error {
+	for _, f := range h.config.TestSuiteLibraryFiles {
 		p, err := plugin.Open(f)
 		if err != nil {
 			return fmt.Errorf("opening test suite file: %w", err)
@@ -168,14 +172,11 @@ func (h *Handoff) loadTestSuiteFiles() error {
 		suites, schedules := handoffFunc()
 
 		for _, suite := range suites {
-			testSuitesLoaded++
 			h.readOnlyTestSuites[suite.Name] = mapTestSuite(suite)
 		}
 
 		h.schedules = append(h.schedules, schedules...)
 	}
-
-	slog.Info(fmt.Sprintf("Loaded %d test suites from plugin files", testSuitesLoaded))
 
 	return nil
 }
@@ -211,28 +212,6 @@ func (s *Handoff) gracefulShutdown(signal os.Signal) {
 	}
 	slog.Info("DB connection closed")
 	slog.Info("Shutdown successful")
-}
-
-func (s *Handoff) parseFlags() {
-	var port = flag.Int("p", s.config.port, "port used by the server (server mode only)")
-	var listTestSuites = flag.Bool("l", false, "list all configured test suites and exit")
-	var databaseFile = flag.String("d", "handoff.db", "database file location")
-	var environment = flag.String("e", "", "the environment where the tests are run")
-	var maxConcurrentRuns = flag.Int("c", 25, "the max number of concurrent test runs. Must be set to value > 0")
-
-	flag.Parse()
-
-	if *maxConcurrentRuns < 1 {
-		flag.Usage()
-		os.Exit(-1)
-	}
-
-	s.config.testSuitePluginFiles = flag.Args()
-	s.config.printTestSuites = *listTestSuites
-	s.config.port = *port
-	s.config.databaseFilePath = *databaseFile
-	s.config.environment = *environment
-	s.config.maxConcurrentRuns = *maxConcurrentRuns
 }
 
 func (s *Handoff) printTestSuites() {
@@ -313,7 +292,7 @@ func (s *Handoff) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, t
 		Tests:           len(ts.Tests),
 		Scheduled:       time.Now(),
 		TriggeredBy:     triggeredBy,
-		Environment:     s.config.environment,
+		Environment:     s.config.Environment,
 	}
 
 	ctx, err := s.storage.StartTransaction(context.Background())
@@ -327,7 +306,6 @@ func (s *Handoff) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, t
 		return model.TestSuiteRun{}, fmt.Errorf("unable to persist new test suite run: %w", err)
 	}
 
-	// init test results
 	for testName := range ts.Tests {
 		result := model.ResultPending
 
@@ -421,6 +399,9 @@ func (s *Handoff) runTestSuite(
 	}
 
 	for testName := range suite.FilterTests(testFilter) {
+		// todo: check if the server is shutting down and if so return early.
+		// we will continue pending test runs when the server starts up again.
+
 		tr := latestTestAttempt(testName)
 
 		if forceRun {
@@ -517,6 +498,7 @@ func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRu
 	suite.Tests[testRun.Name](&t)
 }
 
+// asyncPluginCallback is called by asynchronous plugin hooks and persists the updated plugincontext change.
 func (s *Handoff) asyncPluginCallback(p Plugin, pluginContext map[string]any) {
 	// todo
 }

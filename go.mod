@@ -3,6 +3,7 @@ module github.com/raphi011/handoff
 go 1.21.1
 
 require (
+	github.com/alexflint/go-arg v1.4.3
 	github.com/elastic/go-elasticsearch/v8 v8.6.0
 	github.com/golang-migrate/migrate/v4 v4.16.2
 	github.com/jmoiron/sqlx v1.3.5
@@ -15,6 +16,7 @@ require (
 )
 
 require (
+	github.com/alexflint/go-scalar v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
