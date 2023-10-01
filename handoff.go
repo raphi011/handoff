@@ -80,12 +80,11 @@ func (c config) Version() string {
 type TestSuite struct {
 	// Name of the testsuite
 	Name string `json:"name"`
-	// AssociatedService can optionally contain the name of the service
-	// that this testsuite is associated with. This will be used for metric labels.
-	AssociatedService string `json:"associatedService"`
-	Setup             func() error
-	Teardown          func() error
-	Tests             []TestFunc
+	// Namespace allows grouping of test suites, e.g. by team name.
+	Namespace string
+	Setup     func() error
+	Teardown  func() error
+	Tests     []TestFunc
 }
 
 // Reexport to allow library users to reference these types
@@ -219,8 +218,8 @@ func (s *Handoff) printTestSuites() {
 
 	for _, ts := range s.readOnlyTestSuites {
 		b.WriteString("suite: \"" + ts.Name + "\"")
-		if ts.AssociatedService != "" {
-			b.WriteString(" (" + ts.AssociatedService + ")")
+		if ts.Namespace != "" {
+			b.WriteString(" (" + ts.Namespace + ")")
 		}
 		b.WriteString("\n")
 
@@ -363,7 +362,7 @@ func (s *Handoff) runTestSuite(
 		}
 	}
 
-	testSuitesRunning := metric.TestSuitesRunning.WithLabelValues(suite.AssociatedService, suite.Name)
+	testSuitesRunning := metric.TestSuitesRunning.WithLabelValues(suite.Namespace, suite.Name)
 	testSuitesRunning.Inc()
 	defer func() {
 		testSuitesRunning.Dec()
@@ -431,7 +430,7 @@ func (s *Handoff) runTestSuite(
 		}
 	}
 
-	metric.TestSuitesRun.WithLabelValues(suite.AssociatedService, suite.Name, "PASSED").Inc()
+	metric.TestSuitesRun.WithLabelValues(suite.Namespace, suite.Name, "PASSED").Inc()
 
 	// TODO: Add the plugin context to the `testRunFinishedEvent`
 	s.plugins.notifyTestSuiteFinished(suite, tsr)
@@ -465,7 +464,7 @@ func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRu
 
 		result := t.Result()
 
-		metric.TestRunsTotal.WithLabelValues(suite.AssociatedService, suite.Name, string(result)).Inc()
+		metric.TestRunsTotal.WithLabelValues(suite.Namespace, suite.Name, string(result)).Inc()
 
 		s.plugins.notifyTestFinished(suite, *testSuiteRun, testRun.Name, t.runtimeContext)
 

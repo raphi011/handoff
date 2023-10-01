@@ -127,12 +127,13 @@ type TestFunc func(t TB)
 type TestSuite struct {
 	// Name of the testsuite
 	Name string `json:"name"`
-	// AssociatedService can optionally contain the name of the service
-	// that this testsuite is associated with. This will be used for metric labels.
-	AssociatedService string `json:"associatedService"`
-	Setup             func() error
-	Teardown          func() error
-	Tests             map[string]TestFunc
+	// TestRetries is the amount of times a test is retried when failing.
+	TestRetries int
+	// Namespace allows grouping of test suites, e.g. by team name.
+	Namespace string
+	Setup     func() error
+	Teardown  func() error
+	Tests     map[string]TestFunc
 }
 
 func (t TestSuite) FilterTests(filter *regexp.Regexp) map[string]TestFunc {

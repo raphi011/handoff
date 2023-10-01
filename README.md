@@ -11,7 +11,7 @@ There are several ways to setup a handoff server:
 ```sh
 go install github.com/raphi011/handoff/cmd/handoff
 go build -buildmode plugin -o example-test-library ./cmd/example-test-library
-handoff ./example-test-library
+handoff -t ./example-test-library
 ```
 
 A test suite library needs to include a public function with signature `func Handoff() ([]handoff.TestSuite, []handoff.ScheduledRun)`.
@@ -25,14 +25,13 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 
 ## Planned features
 
-- [ ] (Feature) Image for [helm chart](https://helm.sh/docs/topics/chart_tests/) tests for automated helm release rollbacks
 - [ ] (Feature) Write a tool "transformcli" that uses go:generate and go/ast to transform handoff tests and suites to standard go tests (suite -> test with subtests + init and cleanup)
 - [ ] (Feature) Automatic test run retries/backoff on failures
 - [ ] (Feature) Configurable test run retention policy
 - [ ] (Feature) Manual retrying of failed tests
 - [ ] (Feature) Grafana service dashboard template
 - [ ] (Feature) Flaky test detection + metric
-- [ ] (Feature) Add test-suite labels (e.g. instead of "associated service", "team name" attributes)
+- [ ] (Feature) Add test-suite labels
 - [ ] (Feature) Add support for async plugins in case they need to do slow operations such as http calls
 - [ ] (Feature) Asynchronous plugin hooks with callbacks for slow operations (e.g. http calls)
 - [ ] (Technical) Comprehensive test suite
@@ -48,6 +47,7 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 - [x] (Feature) Soft test fails that don't fail the entire testsuite. This can be used to help with the chicken/egg problem when you add new tests that target a new service version that is not deployed yet.
 - [x] (Feature) Basic webui that shows test run results
 - [x] (Feature) Start test runs via POST requests
+- [x] (Feature) Test suite namespaces for grouping
 - [x] (Feature) Write test suites with multiple tests written in Go
 - [x] (Feature) Skip individual tests by calling t.Skip() within a test
 - [x] (Feature) Scheduled / recurring test runs (e.g. for soak tests)
@@ -61,6 +61,7 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 - [ ] (Technical) Limit the number of concurrent test runs via a configuration option
 - [ ] (Technical) Websocket that streams test results (like test logs)
 - [ ] (Technical) Authenticated HTTP requests through TLS client certificates
+- [ ] (Feature) Image for [helm chart](https://helm.sh/docs/topics/chart_tests/) tests for automated helm release rollbacks
 - [ ] (Feature) Server mode + cli mode
 - [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
 - [ ] (Feature) Output go test json report
@@ -83,6 +84,6 @@ Metrics are exposed via the `/metrics` endpoint.
 
 | Name                         | Type    | Description                                                 | Labels                                 |
 | ---------------------------- | ------- | ----------------------------------------------------------- | -------------------------------------- |
-| handoff_testsuites_running   | gauge   | The number of test suites currently running                 | associated_service, suite_name         |
-| handoff_testsuites_run_total | counter | The number of test suites run since the service was started | associated_service, suite_name, result |
-| handoff_tests_run_total      | counter | The number of tests run since the service was started       | associated_service, suite_name, result |
+| handoff_testsuites_running   | gauge   | The number of test suites currently running                 | namespace, suite_name         |
+| handoff_testsuites_run_total | counter | The number of test suites run since the service was started | namespace, suite_name, result |
+| handoff_tests_run_total      | counter | The number of tests run since the service was started       | namespace, suite_name, result |

@@ -44,11 +44,11 @@ func WithTestSuite(suite TestSuite) option {
 
 func mapTestSuite(ts TestSuite) model.TestSuite {
 	mapped := model.TestSuite{
-		Name:              ts.Name,
-		AssociatedService: ts.AssociatedService,
-		Setup:             ts.Setup,
-		Teardown:          ts.Teardown,
-		Tests:             make(map[string]model.TestFunc),
+		Name:      ts.Name,
+		Namespace: ts.Namespace,
+		Setup:     ts.Setup,
+		Teardown:  ts.Teardown,
+		Tests:     make(map[string]model.TestFunc),
 	}
 	for _, t := range ts.Tests {
 		mapped.Tests[testName(t)] = t
