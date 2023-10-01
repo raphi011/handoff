@@ -237,7 +237,7 @@ func (s *Storage) LoadPendingTestSuiteRuns(ctx context.Context) ([]model.TestSui
 	runs := []model.TestSuiteRun{}
 	r, err := db.QueryxContext(ctx, `SELECT 
 		id, suiteName, environment, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy
-		FROM TestSuiteRun WHERE status=pending`)
+		FROM TestSuiteRun WHERE result='pending'`)
 	if err != nil {
 		return runs, err
 	}
@@ -261,7 +261,7 @@ func (s *Storage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string)
 	runs := []model.TestSuiteRun{}
 	r, err := db.NamedQuery(`SELECT 
 		id, suiteName, environment, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy
-		FROM TestSuiteRun WHERE suiteName = :suiteName`,
+		FROM TestSuiteRun WHERE suiteName=:suiteName`,
 		map[string]any{"suiteName": suiteName},
 	)
 	if err != nil {

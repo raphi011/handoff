@@ -24,7 +24,7 @@ type TestSuiteRun struct {
 	// Scheduled is the time when the test was triggered, e.g.
 	// through a http call.
 	Scheduled time.Time `json:"scheduled"`
-	// Start is the time when the test run started executing.
+	// Start is the time when the test run first started executing.
 	Start time.Time `json:"start"`
 	// End is the time when the test run finished executing.
 	End time.Time `json:"end"`
@@ -59,6 +59,7 @@ func (tsr TestSuiteRun) ResultFromTestResults() Result {
 func (tsr TestSuiteRun) TestSuiteDuration() int64 {
 	duration := int64(0)
 
+	// todo: only take latest attempt of each individual test
 	for _, r := range tsr.TestResults {
 		duration += r.DurationInMS
 	}

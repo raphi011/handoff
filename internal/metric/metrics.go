@@ -11,12 +11,12 @@ var (
 		Help: "The number of test suites currently running",
 	}, []string{"namespace", "suite_name"})
 
-	TestSuitesRun = promauto.NewCounterVec(prometheus.CounterOpts{Name: "handoff_testsuites_run_total",
-		Help: "The number of test suites run since the service was started",
+	TestSuitesRun = promauto.NewCounterVec(prometheus.CounterOpts{Name: "handoff_testsuites_started_total",
+		Help: "The number of test suite runs",
 	}, []string{"namespace", "suite_name", "result"})
 
 	TestRunsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "handoff_tests_run_total",
-		Help: "The number of tests run since the service was started",
+		Help: "The number of tests run",
 	}, []string{"namespace", "suite_name", "result"})
 )

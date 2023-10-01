@@ -28,19 +28,16 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 - [ ] (Feature) Write a tool "transformcli" that uses go:generate and go/ast to transform handoff tests and suites to standard go tests (suite -> test with subtests + init and cleanup)
 - [ ] (Feature) Automatic test run retries/backoff on failures
 - [ ] (Feature) Configurable test run retention policy
-- [ ] (Feature) Manual retrying of failed tests
-- [ ] (Feature) Grafana service dashboard template
 - [ ] (Feature) Flaky test detection + metric
 - [ ] (Feature) Add test-suite labels
-- [ ] (Feature) Add support for async plugins in case they need to do slow operations such as http calls
 - [ ] (Feature) Asynchronous plugin hooks with callbacks for slow operations (e.g. http calls)
 - [ ] (Technical) Comprehensive test suite
-- [ ] (Technical) Continue test runs on service restart
 - [ ] (Plugin) Pagerduty - triger alerts/incidents on failed e2e tests
 - [ ] (Plugin) Slack - send messages to slack channels when tests pass / fail
 - [ ] (Plugin) Github - pr status checks
 - [ ] (Plugin) Prometheus / Loki / Tempo / ELK stack - find and fetch logs/traces/metrics that are created by tests (e.g. for easier debugging) - e.g. via correlation ids
 - [x] (Technical) Server configuration through either ENV vars or cli flags
+- [x] (Technical) Continue test runs on service restart
 - [x] (Technical) Graceful server shutdown
 - [x] (Technical) Loading of `TestSuite`s via shared libraries.
 - [x] (Technical) SQLite Persistence layer
@@ -49,6 +46,7 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 - [x] (Feature) Start test runs via POST requests
 - [x] (Feature) Test suite namespaces for grouping
 - [x] (Feature) Write test suites with multiple tests written in Go
+- [x] (Feature) Manual retrying of failed tests
 - [x] (Feature) Skip individual tests by calling t.Skip() within a test
 - [x] (Feature) Scheduled / recurring test runs (e.g. for soak tests)
 - [x] (Feature) Skip test subsets via regex filters passed into a test run
@@ -61,6 +59,7 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 - [ ] (Technical) Limit the number of concurrent test runs via a configuration option
 - [ ] (Technical) Websocket that streams test results (like test logs)
 - [ ] (Technical) Authenticated HTTP requests through TLS client certificates
+- [ ] (Feature) Grafana service dashboard template
 - [ ] (Feature) Image for [helm chart](https://helm.sh/docs/topics/chart_tests/) tests for automated helm release rollbacks
 - [ ] (Feature) Server mode + cli mode
 - [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
@@ -82,8 +81,8 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 
 Metrics are exposed via the `/metrics` endpoint.
 
-| Name                         | Type    | Description                                                 | Labels                                 |
-| ---------------------------- | ------- | ----------------------------------------------------------- | -------------------------------------- |
-| handoff_testsuites_running   | gauge   | The number of test suites currently running                 | namespace, suite_name         |
-| handoff_testsuites_run_total | counter | The number of test suites run since the service was started | namespace, suite_name, result |
-| handoff_tests_run_total      | counter | The number of tests run since the service was started       | namespace, suite_name, result |
+| Name                             | Type    | Description                                 | Labels                        |
+| -------------------------------- | ------- | ------------------------------------------- | ----------------------------- |
+| handoff_testsuites_running       | gauge   | The number of test suites currently running | namespace, suite_name         |
+| handoff_testsuites_started_total | counter | The number of test suite runs started       | namespace, suite_name, result |
+| handoff_tests_run_total          | counter | The number of tests run                     | namespace, suite_name, result |

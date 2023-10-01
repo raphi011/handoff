@@ -36,6 +36,8 @@ type Handoff struct {
 	// scheduled runs configured by the user
 	schedules []ScheduledRun
 
+	shuttingDown bool
+
 	// cron object used for scheduled runs
 	cron *cron.Cron
 
@@ -97,9 +99,6 @@ type option func(s *Handoff)
 // New configures a new Handoff instance.
 func New(opts ...option) *Handoff {
 	h := &Handoff{
-		config: config{
-			Port: 1337,
-		},
 		readOnlyTestSuites: map[string]model.TestSuite{},
 	}
 
@@ -142,7 +141,7 @@ func (h *Handoff) Run() error {
 
 	go h.runHTTP()
 
-	h.restartPendingTestRuns()
+	h.resumePendingTestRuns()
 
 	signal := <-exit
 
@@ -180,16 +179,40 @@ func (h *Handoff) loadLibraryFiles() error {
 	return nil
 }
 
-func (s *Handoff) restartPendingTestRuns() {
-	// pendingRuns, err := s.storage.LoadPendingTestSuiteRuns(context.Background())
-	// if err != nil {
-	// 	slog.Warn("Unable to load pending test suite runs", "error", err)
-	// 	return
-	// }
+func (h *Handoff) resumePendingTestRuns() {
+	ctx := context.Background()
+
+	pendingRuns, err := h.storage.LoadPendingTestSuiteRuns(ctx)
+	if err != nil {
+		slog.Warn("Unable to load pending test suite runs", "error", err)
+		return
+	}
+
+	for _, tsr := range pendingRuns {
+		testSuite, ok := h.readOnlyTestSuites[tsr.SuiteName]
+		if !ok {
+			slog.Warn("Cannot continue pending test suite run, missing test suite", "suite-name", tsr.SuiteName)
+			continue
+		}
+
+		tsr.TestResults, err = h.storage.LoadTestRuns(ctx, tsr.SuiteName, tsr.ID)
+		if err != nil {
+			slog.Warn("Unable to load pending test suite test runs", "error", err)
+			continue
+		}
+
+		go h.runTestSuite(testSuite, tsr, nil, false)
+	}
+
+	if len(pendingRuns) > 0 {
+		slog.Info(fmt.Sprintf("Resumed %d test suite run(s) with pending tests", len(pendingRuns)))
+	}
 }
 
 func (s *Handoff) gracefulShutdown(signal os.Signal) {
 	slog.Info("Received signal, shutting down", "signal", signal.String())
+
+	s.shuttingDown = true
 
 	httpStopCtx := s.stopHTTP()
 	cronStopCtx := s.cron.Stop()
@@ -349,6 +372,10 @@ func (s *Handoff) runTestSuite(
 	testFilter *regexp.Regexp,
 	forceRun bool,
 ) {
+	if s.shuttingDown {
+		return
+	}
+
 	s.runningTestSuites.Add(1)
 	defer s.runningTestSuites.Done()
 
@@ -398,9 +425,6 @@ func (s *Handoff) runTestSuite(
 	}
 
 	for testName := range suite.FilterTests(testFilter) {
-		// todo: check if the server is shutting down and if so return early.
-		// we will continue pending test runs when the server starts up again.
-
 		tr := latestTestAttempt(testName)
 
 		if forceRun {
@@ -421,6 +445,10 @@ func (s *Handoff) runTestSuite(
 			continue
 		}
 
+		if s.shuttingDown {
+			// we will continue pending test runs on restart
+			continue
+		}
 		s.runTest(suite, &tsr, tr)
 	}
 
@@ -430,20 +458,24 @@ func (s *Handoff) runTestSuite(
 		}
 	}
 
-	metric.TestSuitesRun.WithLabelValues(suite.Namespace, suite.Name, "PASSED").Inc()
-
 	// TODO: Add the plugin context to the `testRunFinishedEvent`
 	s.plugins.notifyTestSuiteFinished(suite, tsr)
 
-	tsr.End = time.Now()
 	tsr.Result = tsr.ResultFromTestResults()
+	if tsr.Result != model.ResultPending {
+		tsr.End = time.Now()
+	}
 	tsr.DurationInMS = tsr.TestSuiteDuration()
 
 	if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
 		slog.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
 	}
 
-	s.plugins.notifyTestSuiteFinishedAsync(suite, tsr)
+	if tsr.Result != model.ResultPending {
+		s.plugins.notifyTestSuiteFinishedAsync(suite, tsr)
+
+		metric.TestSuitesRun.WithLabelValues(suite.Namespace, suite.Name, string(tsr.Result)).Inc()
+	}
 }
 
 // runTest runs an individual test that is part of a test suite. This function must only be called

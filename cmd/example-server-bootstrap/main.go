@@ -20,6 +20,13 @@ func main() {
 			},
 		}),
 		handoff.WithTestSuite(handoff.TestSuite{
+			Name: "pending-test",
+			Tests: []handoff.TestFunc{
+				Sleep5,
+				Sleep6,
+			},
+		}),
+		handoff.WithTestSuite(handoff.TestSuite{
 			Name: "my-app",
 			Tests: []handoff.TestFunc{
 				Flaky,
@@ -40,6 +47,14 @@ func main() {
 		slog.Error(err.Error())
 		os.Exit(-1)
 	}
+}
+
+func Sleep5(t handoff.TB) {
+	time.Sleep(5 * time.Second)
+}
+
+func Sleep6(t handoff.TB) {
+	time.Sleep(6 * time.Second)
 }
 
 func SoftFailure(t handoff.TB) {
