@@ -24,7 +24,7 @@ import (
 	"golang.org/x/exp/slog"
 )
 
-type Handoff struct {
+type Server struct {
 	// server configuration
 	config config
 
@@ -44,6 +44,14 @@ type Handoff struct {
 
 	shuttingDown bool
 
+	// started will be closed when the service has started.
+	started chan any
+	// shutdown will be closed when the service has shut down.
+	shutdown chan any
+
+	// exit receives os signals
+	exit chan os.Signal
+
 	// cron object used for scheduled runs
 	cron *cron.Cron
 
@@ -55,6 +63,8 @@ type Handoff struct {
 }
 
 type config struct {
+	HostIP string `arg:"-h,--host,env:HANDOFF_HOST" help:"ip address the server should bind to" default:"localhost"`
+
 	// Port for the web api
 	Port int `arg:"-p,env:HANDOFF_PORT" help:"port used by the server (server mode only)" default:"1337"`
 
@@ -100,12 +110,15 @@ type TestFunc = model.TestFunc
 type TB = model.TB
 type TestContext = model.TestContext
 
-type option func(s *Handoff)
+type option func(s *Server)
 
 // New configures a new Handoff instance.
-func New(opts ...option) *Handoff {
-	h := &Handoff{
+func New(opts ...option) *Server {
+	h := &Server{
 		readOnlyTestSuites: map[string]model.TestSuite{},
+		started:            make(chan any),
+		exit:               make(chan os.Signal, 1),
+		shutdown:           make(chan any),
 	}
 
 	h.plugins = newPluginManager(h.asyncPluginCallback)
@@ -117,7 +130,8 @@ func New(opts ...option) *Handoff {
 	return h
 }
 
-func (h *Handoff) Run() error {
+func (h *Server) Run() error {
+	startupStart := time.Now()
 	arg.MustParse(&h.config)
 
 	if err := h.loadLibraryFiles(); err != nil {
@@ -136,31 +150,53 @@ func (h *Handoff) Run() error {
 		return fmt.Errorf("init plugins: %w", err)
 	}
 
-	exit := make(chan os.Signal, 1)
-	signal.Notify(exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(h.exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
+	slog.Info("Connecting to DB")
 	db, err := storage.New(h.config.DatabaseFilePath)
 	if err != nil {
 		return fmt.Errorf("init storage: %w", err)
 	}
 	h.storage = db
 
+	slog.Info("Starting schedules")
 	if err := h.startSchedules(); err != nil {
 		return fmt.Errorf("start schedules: %w", err)
 	}
 
-	go h.runHTTP()
+	h.runHTTP()
+
+	slog.Info(fmt.Sprintf("Server started after %s", time.Since(startupStart)))
+
+	close(h.started)
 
 	h.resumePendingTestRuns()
 
-	signal := <-exit
+	signal := <-h.exit
 
 	h.gracefulShutdown(signal)
 
 	return nil
 }
 
-func (h *Handoff) loadLibraryFiles() error {
+// ServerPort returns the port that the server is using. This is useful
+// when the port is randomly allocated on startup.
+func (h *Server) ServerPort() int {
+	return h.config.Port
+}
+
+// WaitForStartup blocks until the server has started up.
+func (h *Server) WaitForStartup() {
+	<-h.started
+}
+
+// Shutdown shuts down the server and blocks until it is finished.
+func (h *Server) Shutdown() {
+	h.exit <- os.Interrupt
+	<-h.shutdown
+}
+
+func (h *Server) loadLibraryFiles() error {
 	for _, f := range h.config.TestSuiteLibraryFiles {
 		p, err := plugin.Open(f)
 		if err != nil {
@@ -186,7 +222,7 @@ func (h *Handoff) loadLibraryFiles() error {
 	return nil
 }
 
-func (h *Handoff) resumePendingTestRuns() {
+func (h *Server) resumePendingTestRuns() {
 	ctx := context.Background()
 
 	pendingRuns, err := h.storage.LoadPendingTestSuiteRuns(ctx)
@@ -216,7 +252,7 @@ func (h *Handoff) resumePendingTestRuns() {
 	}
 }
 
-func (s *Handoff) gracefulShutdown(signal os.Signal) {
+func (s *Server) gracefulShutdown(signal os.Signal) {
 	slog.Info("Received signal, shutting down", "signal", signal.String())
 
 	s.shuttingDown = true
@@ -239,11 +275,14 @@ func (s *Handoff) gracefulShutdown(signal os.Signal) {
 		slog.Warn("Closing DB connection failed", "error", err)
 		return
 	}
+
+	close(s.shutdown)
+
 	slog.Info("DB connection closed")
 	slog.Info("Shutdown successful")
 }
 
-func (s *Handoff) printTestSuites() {
+func (s *Server) printTestSuites() {
 	b := strings.Builder{}
 
 	for _, ts := range s.readOnlyTestSuites {
@@ -263,7 +302,7 @@ func (s *Handoff) printTestSuites() {
 	os.Exit(0)
 }
 
-func (s *Handoff) startSchedules() error {
+func (s *Server) startSchedules() error {
 	s.cron = cron.New(cron.WithSeconds())
 
 	for i := range s.schedules {
@@ -307,7 +346,7 @@ func (s *Handoff) startSchedules() error {
 // startNewTestSuiteRun is used to start new test suite runs. It persists the
 // test suite run in a pending state and kicks off the execution of the run in a separate
 // goroutine.
-func (s *Handoff) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, testFilter *regexp.Regexp) (model.TestSuiteRun, error) {
+func (s *Server) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, testFilter *regexp.Regexp) (model.TestSuiteRun, error) {
 	testFilterString := ""
 	if testFilter != nil {
 		testFilterString = testFilter.String()
@@ -373,7 +412,7 @@ func (s *Handoff) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, t
 // is continued/rerun. The testFilter is used to run a subset of tests. If nil the testFilter
 // of the TestSuiteRun is used (if any). If `forceRun` is set to true all tests that match the
 // filter are executed again even if a previous attempt succeeded or failed.
-func (s *Handoff) runTestSuite(
+func (s *Server) runTestSuite(
 	suite model.TestSuite,
 	tsr model.TestSuiteRun,
 	testFilter *regexp.Regexp,
@@ -487,7 +526,7 @@ func (s *Handoff) runTestSuite(
 
 // runTest runs an individual test that is part of a test suite. This function must only be called
 // by `runTestSuite()`.
-func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRun, testRun *model.TestRun) {
+func (s *Server) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRun, testRun *model.TestRun) {
 	t := T{
 		suiteName:      suite.Name,
 		testName:       testRun.Name,
@@ -538,11 +577,11 @@ func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRu
 }
 
 // asyncPluginCallback is called by asynchronous plugin hooks and persists the updated plugincontext change.
-func (s *Handoff) asyncPluginCallback(p Plugin, pluginContext map[string]any) {
+func (s *Server) asyncPluginCallback(p Plugin, pluginContext map[string]any) {
 	// todo
 }
 
-func (h *Handoff) mapTestSuites() error {
+func (h *Server) mapTestSuites() error {
 	for _, ts := range h._userProvidedTestSuites {
 		if ts.Name == "" {
 			return errors.New("test suite name is not set")

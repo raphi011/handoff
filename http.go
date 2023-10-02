@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -27,7 +28,7 @@ func (e malformedRequestError) Error() string {
 	return "malformed request param: " + e.param + " reason: " + e.reason
 }
 
-func (s *Handoff) runHTTP() error {
+func (s *Server) runHTTP() error {
 	router := httprouter.New()
 
 	router.Handler("GET", "/metrics", promhttp.Handler())
@@ -42,18 +43,35 @@ func (s *Handoff) runHTTP() error {
 	router.GET("/suites/:suite-name/runs/:run-id", s.getTestSuiteRun)
 	router.GET("/suites/:suite-name/runs/:run-id/test/:test-name", s.getTestRunResult)
 
-	slog.Info("Starting http server", "port", s.config.Port)
-
 	s.httpServer = &http.Server{
 		Handler: router,
-		Addr:    fmt.Sprintf(":%d", s.config.Port),
 		// TODO: set reasonable timeouts
 	}
 
-	return s.httpServer.ListenAndServe()
+	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", s.config.HostIP, s.config.Port))
+	if err != nil {
+		return fmt.Errorf("listening on port %d: %w", s.config.Port, err)
+	}
+
+	if s.config.Port == 0 {
+		// if we are using a randomly assigned port put it back into the config
+		// so that e.g. tests know where to send requests to.
+		s.config.Port = l.Addr().(*net.TCPAddr).Port
+	}
+
+	slog.Info("Starting http server", "port", s.config.Port)
+
+	go func() {
+		err = s.httpServer.Serve(l)
+		if err != nil {
+			slog.Error("http server failed", "error", err)
+		}
+	}()
+
+	return nil
 }
 
-func (s *Handoff) stopHTTP() context.Context {
+func (s *Server) stopHTTP() context.Context {
 	httpStopCtx, cancelHttp := context.WithCancel(context.Background())
 
 	go func() {
@@ -71,7 +89,7 @@ func (s *Handoff) stopHTTP() context.Context {
 	return httpStopCtx
 }
 
-func (s *Handoff) startTestSuite(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *Server) startTestSuite(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	suite, err := s.loadTestSuite(r, p)
 	if err != nil {
 		s.httpError(w, err)
@@ -100,7 +118,7 @@ func (s *Handoff) startTestSuite(w http.ResponseWriter, r *http.Request, p httpr
 	s.writeResponse(w, r, http.StatusCreated, tsr)
 }
 
-func (s *Handoff) rerunTestSuite(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *Server) rerunTestSuite(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	suite, err := s.loadTestSuite(r, p)
 	if err != nil {
 		s.httpError(w, err)
@@ -128,7 +146,7 @@ func (s *Handoff) rerunTestSuite(w http.ResponseWriter, r *http.Request, p httpr
 	s.writeResponse(w, r, http.StatusAccepted, tsr)
 }
 
-func (s *Handoff) getTestSuites(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *Server) getTestSuites(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	testSuites := make([]model.TestSuite, len(s.readOnlyTestSuites))
 
 	i := 0
@@ -140,7 +158,7 @@ func (s *Handoff) getTestSuites(w http.ResponseWriter, r *http.Request, p httpro
 	s.writeResponse(w, r, http.StatusOK, testSuites)
 }
 
-func (s *Handoff) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *Server) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	testRun, err := s.loadTestSuiteRun(r.Context(), p)
 	if err != nil {
 		s.httpError(w, err)
@@ -150,7 +168,7 @@ func (s *Handoff) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p http
 	s.writeResponse(w, r, http.StatusOK, testRun)
 }
 
-func (s *Handoff) getTestRunResult(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *Server) getTestRunResult(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	testRun, err := s.loadTestRun(r.Context(), r, p)
 	if err != nil {
 		s.httpError(w, err)
@@ -160,15 +178,15 @@ func (s *Handoff) getTestRunResult(w http.ResponseWriter, r *http.Request, p htt
 	s.writeResponse(w, r, http.StatusOK, testRun)
 }
 
-func (s *Handoff) getHealth(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *Server) getHealth(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *Handoff) getReady(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *Server) getReady(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *Handoff) getTestSuiteRuns(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *Server) getTestSuiteRuns(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	testRuns, err := s.loadTestSuiteRuns(r.Context(), p)
 	if err != nil {
 		s.httpError(w, err)
@@ -180,7 +198,7 @@ func (s *Handoff) getTestSuiteRuns(w http.ResponseWriter, r *http.Request, p htt
 	}
 }
 
-func (s *Handoff) writeResponse(w http.ResponseWriter, r *http.Request, status int, body any) error {
+func (s *Server) writeResponse(w http.ResponseWriter, r *http.Request, status int, body any) error {
 	var err error
 
 	if headerAcceptsType(r.Header, "text/html") {
@@ -220,7 +238,7 @@ func headerAcceptsType(h http.Header, mimeType string) bool {
 	return strings.Contains(accept, mimeType)
 }
 
-func (s *Handoff) loadTestSuite(r *http.Request, p httprouter.Params) (model.TestSuite, error) {
+func (s *Server) loadTestSuite(r *http.Request, p httprouter.Params) (model.TestSuite, error) {
 	suiteName := p.ByName("suite-name")
 
 	ts, ok := s.readOnlyTestSuites[suiteName]
@@ -232,7 +250,7 @@ func (s *Handoff) loadTestSuite(r *http.Request, p httprouter.Params) (model.Tes
 	return ts, nil
 }
 
-func (s *Handoff) loadTestRun(ctx context.Context, r *http.Request, p httprouter.Params) (model.TestRun, error) {
+func (s *Server) loadTestRun(ctx context.Context, r *http.Request, p httprouter.Params) (model.TestRun, error) {
 	suiteName := p.ByName("suite-name")
 	testName := p.ByName("test-name")
 	runID, err := strconv.Atoi(p.ByName("run-id"))
@@ -256,13 +274,13 @@ func (s *Handoff) loadTestRun(ctx context.Context, r *http.Request, p httprouter
 	return tr, nil
 }
 
-func (s *Handoff) loadTestSuiteRuns(ctx context.Context, p httprouter.Params) ([]model.TestSuiteRun, error) {
+func (s *Server) loadTestSuiteRuns(ctx context.Context, p httprouter.Params) ([]model.TestSuiteRun, error) {
 	suiteName := p.ByName("suite-name")
 
 	return s.storage.LoadTestSuiteRunsByName(ctx, suiteName)
 }
 
-func (s *Handoff) loadTestSuiteRun(ctx context.Context, p httprouter.Params) (model.TestSuiteRun, error) {
+func (s *Server) loadTestSuiteRun(ctx context.Context, p httprouter.Params) (model.TestSuiteRun, error) {
 	suiteName := p.ByName("suite-name")
 	runID, err := strconv.Atoi(p.ByName("run-id"))
 	if err != nil {
@@ -282,7 +300,7 @@ func (s *Handoff) loadTestSuiteRun(ctx context.Context, p httprouter.Params) (mo
 	return tr, nil
 }
 
-func (s *Handoff) httpError(w http.ResponseWriter, err error) {
+func (s *Server) httpError(w http.ResponseWriter, err error) {
 	var notFound model.NotFoundError
 	var malformedRequest malformedRequestError
 

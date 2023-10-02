@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"regexp"
 	"time"
 
@@ -58,28 +59,37 @@ func (s *Storage) Close() error {
 	return s.db.Close()
 }
 
-var pragma = []string{"busy_timeout(5000)", "journal_mode(WAL)", "foreign_keys(1)", "synchronous(normal)"}
-
 func connectionString(filename string) string {
 	var cs string
+	var options = []string{"_pragma=busy_timeout(5000)", "_pragma=journal_mode(WAL)", "_pragma=foreign_keys(1)", "_pragma=synchronous(normal)"}
 
 	if filename != "" {
 		cs = filename
 	} else {
-		cs = ":memory:"
+		cs = "file:" + randomAlphanumeric(16)
+		options = append(options, "mode=memory", "cache=shared")
 	}
 
-	for i, p := range pragma {
+	for i, o := range options {
 		if i == 0 {
 			cs += "?"
 		} else {
 			cs += "&"
 		}
-
-		cs += "_pragma=" + p
+		cs += o
 	}
 
 	return cs
+}
+
+const alphaNumericChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func randomAlphanumeric(length int) string {
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = alphaNumericChars[rand.Intn(len(alphaNumericChars))]
+	}
+	return string(b)
 }
 
 func migrateDB(db *sqlx.DB) error {
@@ -179,6 +189,7 @@ func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) 
 	if err != nil {
 		return -1, err
 	}
+	defer r.Close()
 
 	if !r.Next() {
 		return -1, fmt.Errorf("retrieving inserted TestSuiteRun id")

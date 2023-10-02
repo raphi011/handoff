@@ -10,34 +10,34 @@ import (
 
 type TestSuiteRun struct {
 	// ID is the identifier of the test run.
-	ID int `json:"id"`
+	ID int
 	// SuiteName is the name of the test suite that is run.
-	SuiteName string `json:"suiteName"`
+	SuiteName string
 	// Result is the outcome of the entire test suite run.
-	Result Result `json:"result"`
+	Result Result
 	// TestFilter filters out a subset of the tests and skips the
 	// remaining ones (not implemented yet).
-	TestFilter      string `json:"testFilter"`
+	TestFilter      string
 	TestFilterRegex *regexp.Regexp
 	// Tests counts the total amount of tests in the suite.
-	Tests int `json:"tests"`
+	Tests int
 	// Scheduled is the time when the test was triggered, e.g.
 	// through a http call.
-	Scheduled time.Time `json:"scheduled"`
+	Scheduled time.Time
 	// Start is the time when the test run first started executing.
-	Start time.Time `json:"start"`
+	Start time.Time
 	// End is the time when the test run finished executing.
-	End time.Time `json:"end"`
+	End time.Time
 	// DurationInMS is the test run execution times summed up.
-	DurationInMS int64 `json:"durationInMs"`
+	DurationInMS int64
 	// SetupLogs are the logs that are written during the setup phase.
-	SetupLogs string `json:"setupLogs"`
+	SetupLogs string
 	// TriggeredBy denotes the origin of the test run, e.g. scheduled or via http call.
-	TriggeredBy string `json:"triggeredBy"`
+	TriggeredBy string
 	// Environment is additional information on where the tests are run (e.g. cluster name).
-	Environment string `json:"environment"`
+	Environment string
 	// TestResults contains the detailed test results of each test.
-	TestResults []TestRun `json:"testResults"`
+	TestResults []TestRun
 }
 
 func (tsr TestSuiteRun) ResultFromTestResults() Result {
