@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"plugin"
+	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -32,6 +34,10 @@ type Handoff struct {
 	// a map of all testsuites that must not be modified after
 	// initialisation.
 	readOnlyTestSuites map[string]model.TestSuite
+
+	// _userProvidedTestSuites is a list of all test suites provided
+	// by the user and will be mapped to `readOnlyTestSuites` on startup.
+	_userProvidedTestSuites []TestSuite
 
 	// scheduled runs configured by the user
 	schedules []ScheduledRun
@@ -62,7 +68,7 @@ type config struct {
 
 	// List will, if set to true, print all loaded test suites
 	// and immediately exit.
-	ListTestSyutes bool `arg:"-l,--list" help:"list all configured test suites and exit" default:"false"`
+	ListTestSuites bool `arg:"-l,--list" help:"list all configured test suites and exit" default:"false"`
 
 	// Environment is e.g. the cluster/platform the tests are run on.
 	// This is added to metrics and the testrun information.
@@ -118,7 +124,11 @@ func (h *Handoff) Run() error {
 		return fmt.Errorf("loading test library files: %w", err)
 	}
 
-	if h.config.ListTestSyutes {
+	if err := h.mapTestSuites(); err != nil {
+		return err
+	}
+
+	if h.config.ListTestSuites {
 		h.printTestSuites()
 	}
 
@@ -169,10 +179,7 @@ func (h *Handoff) loadLibraryFiles() error {
 
 		suites, schedules := handoffFunc()
 
-		for _, suite := range suites {
-			h.readOnlyTestSuites[suite.Name] = mapTestSuite(suite)
-		}
-
+		h._userProvidedTestSuites = append(h._userProvidedTestSuites, suites...)
 		h.schedules = append(h.schedules, schedules...)
 	}
 
@@ -533,4 +540,42 @@ func (s *Handoff) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRu
 // asyncPluginCallback is called by asynchronous plugin hooks and persists the updated plugincontext change.
 func (s *Handoff) asyncPluginCallback(p Plugin, pluginContext map[string]any) {
 	// todo
+}
+
+func (h *Handoff) mapTestSuites() error {
+	for _, ts := range h._userProvidedTestSuites {
+		if ts.Name == "" {
+			return errors.New("test suite name is not set")
+		}
+		if len(ts.Tests) == 0 {
+			return fmt.Errorf("test suite %s has no tests configured", ts.Name)
+		}
+		if _, ok := h.readOnlyTestSuites[ts.Name]; ok {
+			return fmt.Errorf("duplicate test suite with name %s", ts.Name)
+		}
+
+		mappedTs := model.TestSuite{
+			Name:      ts.Name,
+			Namespace: ts.Namespace,
+			Setup:     ts.Setup,
+			Teardown:  ts.Teardown,
+			Tests:     make(map[string]model.TestFunc),
+		}
+
+		for _, t := range ts.Tests {
+			mappedTs.Tests[testName(t)] = t
+		}
+
+		h.readOnlyTestSuites[mappedTs.Name] = mappedTs
+	}
+
+	return nil
+}
+
+func testName(tf TestFunc) string {
+	fullFuncName := runtime.FuncForPC(reflect.ValueOf(tf).Pointer()).Name()
+
+	packageIndex := strings.LastIndex(fullFuncName, ".") + 1
+	// remove the package name
+	return fullFuncName[packageIndex:]
 }

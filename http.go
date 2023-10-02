@@ -296,5 +296,5 @@ func (s *Handoff) httpError(w http.ResponseWriter, err error) {
 	}
 
 	w.WriteHeader(http.StatusInternalServerError)
-	slog.Warn("internel server error", "error", err)
+	slog.Warn("internal server error", "error", err)
 }
