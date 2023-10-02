@@ -1,12 +1,15 @@
 package storage
 
 import (
+	"bytes"
+	"compress/zlib"
 	"context"
 	"database/sql"
 	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"time"
 
@@ -286,7 +289,7 @@ func (s *Storage) LoadTestRuns(ctx context.Context, suiteName string, tsrID int)
 
 	runs := []model.TestRun{}
 	r, err := db.NamedQuery(`SELECT 
-		suiteName, suiteRunId, testName, attempt, result, logs, context, startTime, endTime, softFailure
+		suiteName, suiteRunId, testName, attempt, result, compressedLogs, context, startTime, endTime, softFailure
 		FROM TestRun WHERE suiteName=:suiteName and suiteRunId=:suiteRunId`,
 		map[string]any{
 			"suiteRunId": tsrID,
@@ -314,7 +317,7 @@ func (s *Storage) LoadTestRun(ctx context.Context, suiteName string, tsrID int, 
 	db := s.getDB(ctx)
 
 	r, err := db.NamedQuery(`SELECT 
-		suiteName, suiteRunId, testName, attempt, result, logs, context, startTime, endTime, softFailure
+		suiteName, suiteRunId, testName, attempt, result, compressedLogs, context, startTime, endTime, softFailure
 		FROM TestRun WHERE suiteName=:suiteName and suiteRunId=:suiteRunId and testName=:testName and attempt=:attempt`,
 		map[string]any{
 			"suiteRunId": tsrID,
@@ -341,16 +344,21 @@ func (s *Storage) InsertTestRun(ctx context.Context, tr model.TestRun) error {
 		return fmt.Errorf("unable to marshal plugin data: %w", err)
 	}
 
+	logs, err := compressedLogs(tr.Logs)
+	if err != nil {
+		return fmt.Errorf("unable to compress logs: %w", err)
+	}
+
 	db := s.getDB(ctx)
 	_, err = db.NamedExecContext(ctx, `INSERT INTO TestRun
-	(suiteName, suiteRunId, testName, result, logs, context, startTime, endTime, attempt, softFailure) VALUES
+	(suiteName, suiteRunId, testName, result, compressedLogs, context, startTime, endTime, attempt, softFailure) VALUES
 	(:suiteName, :suiteRunId, :testName, :result, :logs, :context, :startTime, :endTime, :attempt, :softFailure)`,
 		map[string]any{
 			"suiteName":   tr.SuiteName,
 			"suiteRunId":  tr.SuiteRunID,
 			"testName":    tr.Name,
 			"result":      tr.Result,
-			"logs":        tr.Logs,
+			"logs":        logs,
 			"context":     string(testContext),
 			"startTime":   timeFormat(tr.Start),
 			"endTime":     timeFormat(tr.End),
@@ -370,9 +378,14 @@ func (s *Storage) InsertForcedTestRun(ctx context.Context, tr model.TestRun) (in
 		return -1, fmt.Errorf("unable to marshal plugin data: %w", err)
 	}
 
+	logs, err := compressedLogs(tr.Logs)
+	if err != nil {
+		return -1, fmt.Errorf("unable to compress logs: %w", err)
+	}
+
 	db := s.getDB(ctx)
 	r, err := db.NamedQuery(`INSERT INTO TestRun
-	(suiteName, suiteRunId, testName, result, logs, context, startTime, endTime, softFailure, attempt) VALUES
+	(suiteName, suiteRunId, testName, result, compressedLogs, context, startTime, endTime, softFailure, attempt) VALUES
 	(:suiteName, :suiteRunId, :testName, :result, :logs, :context, :startTime, :endTime, :softFailure,
 		COALESCE(select max(attempt)+1 from TestRun where suiteName=:suiteName and suiteRunId=:suiteRunId and testName=:testName, 1)
 	RETURNING attempt`,
@@ -381,7 +394,7 @@ func (s *Storage) InsertForcedTestRun(ctx context.Context, tr model.TestRun) (in
 			"suiteRunId":  tr.SuiteRunID,
 			"testName":    tr.Name,
 			"result":      tr.Result,
-			"logs":        tr.Logs,
+			"logs":        logs,
 			"context":     string(testContext),
 			"startTime":   timeFormat(tr.Start),
 			"endTime":     timeFormat(tr.End),
@@ -413,9 +426,14 @@ func (s *Storage) UpdateTestRun(ctx context.Context, tr model.TestRun) error {
 		return fmt.Errorf("unable to marshal plugin data: %w", err)
 	}
 
+	logs, err := compressedLogs(tr.Logs)
+	if err != nil {
+		return fmt.Errorf("unable to compress logs: %w", err)
+	}
+
 	db := s.getDB(ctx)
 	r, err := db.NamedExecContext(ctx, `UPDATE TestRun SET
-	result=:result, logs=:logs, startTime=:startTime, endTime=:endTime, context=:context, softFailure=:softFailure
+	result=:result, compressedLogs=:logs, startTime=:startTime, endTime=:endTime, context=:context, softFailure=:softFailure
 	WHERE suiteName=:suiteName and suiteRunId=:suiteRunId and testName=:testName and attempt=:attempt`,
 		map[string]any{
 			"suiteName":   tr.SuiteName,
@@ -423,14 +441,14 @@ func (s *Storage) UpdateTestRun(ctx context.Context, tr model.TestRun) error {
 			"testName":    tr.Name,
 			"attempt":     tr.Attempt,
 			"result":      tr.Result,
-			"logs":        tr.Logs,
+			"logs":        logs,
 			"context":     string(testContext),
 			"startTime":   timeFormat(tr.Start),
 			"endTime":     timeFormat(tr.End),
 			"softFailure": tr.SoftFailure,
 		})
 	if err != nil {
-		return fmt.Errorf("update statement failed")
+		return fmt.Errorf("update statement failed: %w", err)
 	}
 
 	if affected, _ := r.RowsAffected(); affected != 1 {
@@ -455,13 +473,15 @@ func scanTestRun(r *sqlx.Rows) (model.TestRun, error) {
 
 	var testContext []byte
 
+	var logs []byte
+
 	err := r.Scan(
 		&tr.SuiteName,
 		&tr.SuiteRunID,
 		&tr.Name,
 		&tr.Attempt,
 		&tr.Result,
-		&tr.Logs,
+		&logs,
 		&testContext,
 		&start,
 		&end,
@@ -481,9 +501,44 @@ func scanTestRun(r *sqlx.Rows) (model.TestRun, error) {
 		return model.TestRun{}, fmt.Errorf("unmarshaling plugin data: %w", err)
 	}
 
+	tr.Logs, err = decompressLogs(logs)
+	if err != nil {
+		return model.TestRun{}, err
+	}
+
 	tr.DurationInMS = tr.End.Sub(tr.Start).Milliseconds()
 
 	return tr, nil
+}
+
+func compressedLogs(logs string) ([]byte, error) {
+	var compressedLogs bytes.Buffer
+
+	w := zlib.NewWriter(&compressedLogs)
+
+	_, err := w.Write([]byte(logs))
+	w.Close()
+
+	return compressedLogs.Bytes(), err
+}
+
+func decompressLogs(l []byte) (string, error) {
+	if len(l) == 0 {
+		return "", nil
+	}
+
+	reader, err := zlib.NewReader(bytes.NewReader(l))
+	if err != nil {
+		return "", fmt.Errorf("decompress logs: %w", err)
+	}
+	defer reader.Close()
+
+	logs, err := io.ReadAll(reader)
+	if err != nil {
+		return "", fmt.Errorf("decompress logs: %w", err)
+	}
+
+	return string(logs), nil
 }
 
 func scanTestSuiteRun(r *sqlx.Rows) (model.TestSuiteRun, error) {

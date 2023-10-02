@@ -27,7 +27,7 @@ CREATE TABLE TestRun(
     context TEXT NOT NULL,
 
     result TEXT NOT NULL, 
-    logs TEXT NOT NULL,
+    compressedLogs BLOB,
 
     softFailure INTEGER NOT NULL,
 
