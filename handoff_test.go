@@ -21,11 +21,24 @@ func TestSuiteWithFailingTestShouldFailTheRun(t *testing.T) {
 	i := acceptanceTest(t)
 	defer i.shutdown()
 
-	tsr := i.createNewTestSuiteRun(t, "failing")
-
 	suiteName := "failing"
 
-	i.waitForTestSuiteRunFailing(t, 3*time.Second, suiteName, tsr.ID)
+	tsr := i.createNewTestSuiteRun(t, suiteName)
+
+	i.waitForTestSuiteRunWithResult(t, 3*time.Second, suiteName, tsr.ID, model.ResultFailed)
+}
+
+func TestSuiteWithSoftFailShouldNotFailTheRun(t *testing.T) {
+	t.Parallel()
+
+	i := acceptanceTest(t)
+	defer i.shutdown()
+
+	suiteName := "soft-fail"
+
+	tsr := i.createNewTestSuiteRun(t, suiteName)
+
+	i.waitForTestSuiteRunWithResult(t, 3*time.Second, suiteName, tsr.ID, model.ResultPassed)
 }
 
 func Fail(t handoff.TB) {
@@ -38,6 +51,12 @@ func Flaky(t handoff.TB) {
 	}
 
 	t.Log("flaky test succeeded")
+}
+
+func SoftFail(t handoff.TB) {
+	t.SoftFailure()
+
+	t.Error("Soft fail error")
 }
 
 func Success(t handoff.TB) {
@@ -60,6 +79,13 @@ func acceptanceTest(t *testing.T) *test {
 			Name: "succeed",
 			Tests: []handoff.TestFunc{
 				Success,
+			},
+		}),
+		handoff.WithTestSuite(handoff.TestSuite{
+			Name: "soft-fail",
+			Tests: []handoff.TestFunc{
+				Success,
+				SoftFail,
 			},
 		}),
 		handoff.WithTestSuite(handoff.TestSuite{
@@ -89,7 +115,7 @@ func acceptanceTest(t *testing.T) *test {
 }
 
 func (ti *test) createNewTestSuiteRun(t *testing.T, suiteName string) client.TestSuiteRun {
-	tsr, err := ti.client.CreateTestSuiteRun(context.Background(), "failing", nil)
+	tsr, err := ti.client.CreateTestSuiteRun(context.Background(), suiteName, nil)
 	if err != nil {
 		t.Errorf("unable to create test suite run: %v", err)
 	}
@@ -97,24 +123,26 @@ func (ti *test) createNewTestSuiteRun(t *testing.T, suiteName string) client.Tes
 	return tsr
 }
 
-func (ti *test) waitForTestSuiteRunFailing(t *testing.T, timeout time.Duration, suiteName string, runID int) client.TestSuiteRun {
+func (ti *test) waitForTestSuiteRunWithResult(t *testing.T, timeout time.Duration, suiteName string, runID int, status model.Result) client.TestSuiteRun {
+	t.Helper()
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	for {
 		tsr, err := ti.client.GetTestSuiteRun(ctx, suiteName, runID)
 		if errors.Is(err, context.DeadlineExceeded) {
-			t.Error("timed out waiting for test suite run with status failing")
+			t.Fatalf("timed out waiting for test suite run with status %s", status)
 			return model.TestSuiteRunHTTP{}
 		} else if err != nil {
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
 
-		if tsr.Result == model.ResultFailed {
+		if tsr.Result == status {
 			return tsr
 		} else if tsr.Result != model.ResultPending {
-			t.Errorf("test suite run result is %q, expected %q", tsr.Result, model.ResultPassed)
+			t.Fatalf("test suite run result is %q, expected %q", tsr.Result, status)
 		}
 	}
 }
