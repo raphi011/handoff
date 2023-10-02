@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,7 +22,6 @@ import (
 	"github.com/raphi011/handoff/internal/model"
 	"github.com/raphi011/handoff/internal/storage"
 	"github.com/robfig/cron/v3"
-	"golang.org/x/exp/slog"
 )
 
 type Server struct {
@@ -418,10 +418,6 @@ func (s *Server) runTestSuite(
 	testFilter *regexp.Regexp,
 	forceRun bool,
 ) {
-	if s.shuttingDown {
-		return
-	}
-
 	s.runningTestSuites.Add(1)
 	defer s.runningTestSuites.Done()
 

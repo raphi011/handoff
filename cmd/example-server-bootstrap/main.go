@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"math/rand"
 	"os"
 	"time"
@@ -8,7 +9,6 @@ import (
 	"github.com/raphi011/handoff"
 	"github.com/raphi011/handoff/plugin"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/exp/slog"
 )
 
 func main() {

@@ -1,10 +1,10 @@
 package main
 
 import (
+	"log/slog"
 	"os"
 
 	"github.com/raphi011/handoff"
-	"golang.org/x/exp/slog"
 )
 
 func main() {

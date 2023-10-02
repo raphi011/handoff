@@ -2,10 +2,10 @@ package handoff
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/raphi011/handoff/internal/model"
-	"golang.org/x/exp/slog"
 )
 
 // make sure we adhere to the TB interface

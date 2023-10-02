@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"regexp"
@@ -16,7 +17,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/raphi011/handoff/internal/html"
 	"github.com/raphi011/handoff/internal/model"
-	"golang.org/x/exp/slog"
 )
 
 type malformedRequestError struct {

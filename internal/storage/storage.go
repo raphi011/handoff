@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"regexp"
 	"time"
@@ -19,8 +20,6 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jmoiron/sqlx"
 	"github.com/raphi011/handoff/internal/model"
-
-	"golang.org/x/exp/slog"
 )
 
 //go:embed migrations/*.sql
@@ -424,11 +423,9 @@ func (s *Storage) InsertForcedTestRun(ctx context.Context, tr model.TestRun) (in
 
 	if err = r.Scan(attempt); err != nil {
 		return -1, errors.New("could not retrieve created testrun attempt #")
-
 	}
 
 	return attempt, nil
-
 }
 
 func (s *Storage) UpdateTestRun(ctx context.Context, tr model.TestRun) error {
