@@ -12,10 +12,7 @@ import (
 func TestSuiteRunWithUnknownSuiteShouldFailSuiteNotFoundReturns404(t *testing.T) {
 	t.Parallel()
 
-	i := acceptanceTest(t)
-	defer i.shutdown()
-
-	_, err := i.client.CreateTestSuiteRun(context.Background(), "not-found", nil)
+	_, err := te.client.CreateTestSuiteRun(context.Background(), "not-found", nil)
 
 	var reqError client.RequestError
 
@@ -31,10 +28,7 @@ func TestSuiteRunWithUnknownSuiteShouldFailSuiteNotFoundReturns404(t *testing.T)
 func TestCreateTestSuiteRunShouldSucceed(t *testing.T) {
 	t.Parallel()
 
-	i := acceptanceTest(t)
-	defer i.shutdown()
-
-	_, err := i.client.CreateTestSuiteRun(context.Background(), "succeed", nil)
+	_, err := te.client.CreateTestSuiteRun(context.Background(), "succeed", nil)
 	if err != nil {
 		t.Errorf("create test suite run should not fail: %v", err)
 	}

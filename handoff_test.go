@@ -15,30 +15,32 @@ import (
 	"github.com/raphi011/handoff/internal/model"
 )
 
+var te *test
+
+func init() {
+	te = acceptanceTest()
+}
+
+func TestMain(m *testing.M) {}
+
 func TestSuiteWithFailingTestShouldFailTheRun(t *testing.T) {
 	t.Parallel()
 
-	i := acceptanceTest(t)
-	defer i.shutdown()
-
 	suiteName := "failing"
 
-	tsr := i.createNewTestSuiteRun(t, suiteName)
+	tsr := te.createNewTestSuiteRun(t, suiteName)
 
-	i.waitForTestSuiteRunWithResult(t, 3*time.Second, suiteName, tsr.ID, model.ResultFailed)
+	te.waitForTestSuiteRunWithResult(t, 3*time.Second, suiteName, tsr.ID, model.ResultFailed)
 }
 
 func TestSuiteWithSoftFailShouldNotFailTheRun(t *testing.T) {
 	t.Parallel()
 
-	i := acceptanceTest(t)
-	defer i.shutdown()
-
 	suiteName := "soft-fail"
 
-	tsr := i.createNewTestSuiteRun(t, suiteName)
+	tsr := te.createNewTestSuiteRun(t, suiteName)
 
-	i.waitForTestSuiteRunWithResult(t, 3*time.Second, suiteName, tsr.ID, model.ResultPassed)
+	te.waitForTestSuiteRunWithResult(t, 3*time.Second, suiteName, tsr.ID, model.ResultPassed)
 }
 
 func Fail(t handoff.TB) {
@@ -68,9 +70,7 @@ type test struct {
 	client client.Client
 }
 
-func acceptanceTest(t *testing.T) *test {
-	t.Helper()
-
+func acceptanceTest() *test {
 	// random port and in-memory database
 	os.Args = []string{"handoff-test", "-p", "0", "-d", ""}
 

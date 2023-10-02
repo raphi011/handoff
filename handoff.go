@@ -187,6 +187,7 @@ func (h *Server) ServerPort() int {
 
 // WaitForStartup blocks until the server has started up.
 func (h *Server) WaitForStartup() {
+	// TODO: maybe respond with the error if startup fails?
 	<-h.started
 }
 
