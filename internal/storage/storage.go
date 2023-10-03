@@ -175,8 +175,8 @@ func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) 
 	db := s.getDB(ctx)
 
 	r, err := db.NamedQuery(`INSERT INTO TestSuiteRun 
-	(suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxRetries, timeoutDuration, flaky, id) VALUES
-	(:suiteName, :environment, :reference, :result, :testFilter, :scheduledTime, :startTime, :endTime, :setupLogs, :triggeredBy, :maxRetries, :timeoutDuration, :flaky,
+	(suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxTestAttempts, timeoutDuration, flaky, id) VALUES
+	(:suiteName, :environment, :reference, :result, :testFilter, :scheduledTime, :startTime, :endTime, :setupLogs, :triggeredBy, :maxTestAttempts, :timeoutDuration, :flaky,
 		COALESCE((select max(id)+1 from TestSuiteRun where suiteName=:suiteName), 1))
 	RETURNING id`,
 		map[string]any{
@@ -190,7 +190,7 @@ func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) 
 			"setupLogs":       tsr.SetupLogs,
 			"triggeredBy":     tsr.Params.TriggeredBy,
 			"reference":       tsr.Params.Reference,
-			"maxRetries":      tsr.Params.MaxRetries,
+			"maxTestAttempts": tsr.Params.MaxTestAttempts,
 			"testFilter":      tsr.Params.TestFilter,
 			"timeoutDuration": tsr.Params.Timeout,
 		})
@@ -236,7 +236,7 @@ func (s *Storage) LoadTestSuiteRun(ctx context.Context, suiteName string, runID 
 	db := s.getDB(ctx)
 
 	r, err := db.NamedQuery(`SELECT 
-	id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxRetries, timeoutDuration
+	id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxTestAttempts, timeoutDuration
 	FROM TestSuiteRun WHERE suiteName = :suiteName and id = :id`,
 		map[string]any{
 			"suiteName": suiteName,
@@ -259,7 +259,7 @@ func (s *Storage) LoadPendingTestSuiteRuns(ctx context.Context) ([]model.TestSui
 
 	runs := []model.TestSuiteRun{}
 	r, err := db.QueryxContext(ctx, `SELECT 
-		id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxRetries, timeoutDuration
+		id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxTestAttempts, timeoutDuration
 		FROM TestSuiteRun WHERE result='pending'`)
 	if err != nil {
 		return runs, err
@@ -283,7 +283,7 @@ func (s *Storage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string)
 
 	runs := []model.TestSuiteRun{}
 	r, err := db.NamedQuery(`SELECT 
-		id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxRetries, timeoutDuration
+		id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxTestAttempts, timeoutDuration
 		FROM TestSuiteRun WHERE suiteName=:suiteName`,
 		map[string]any{"suiteName": suiteName},
 	)
@@ -530,7 +530,7 @@ func scanTestSuiteRun(r *sqlx.Rows) (model.TestSuiteRun, error) {
 		&end,
 		&tsr.SetupLogs,
 		&tsr.Params.TriggeredBy,
-		&tsr.Params.MaxRetries,
+		&tsr.Params.MaxTestAttempts,
 		&tsr.Params.Timeout,
 	)
 	if err != nil {

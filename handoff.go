@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	stdliblog "log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -103,12 +103,12 @@ type TestSuite struct {
 	// Name of the testsuite
 	Name string `json:"name"`
 	// Namespace allows grouping of test suites, e.g. by team name.
-	Namespace  string
-	MaxRetries int
-	Setup      func() error
-	Teardown   func() error
-	Timeout    time.Duration
-	Tests      []TestFunc
+	Namespace       string
+	MaxTestAttempts int
+	Setup           func() error
+	Teardown        func() error
+	Timeout         time.Duration
+	Tests           []TestFunc
 }
 
 // Reexport to allow library users to reference these types
@@ -145,7 +145,7 @@ func (s *Server) Run() error {
 	// and not 'pollute' the server logs, so we need to redirect
 	// the standard test loggers to /dev/null and use a custom one
 	// for the server.
-	log.SetOutput(io.Discard)
+	stdliblog.SetOutput(io.Discard)
 
 	arg.MustParse(&s.config)
 
@@ -190,7 +190,7 @@ func (s *Server) Run() error {
 	s.gracefulShutdown(signal)
 
 	// restore logger
-	log.SetOutput(os.Stderr)
+	stdliblog.SetOutput(os.Stderr)
 
 	return nil
 }
@@ -352,7 +352,7 @@ func (s *Server) startSchedules() error {
 				TriggeredBy:     "scheduled",
 				TestFilterRegex: schedule.testFilter,
 				TestFilter:      schedule.TestFilter,
-				MaxRetries:      ts.MaxRetries,
+				MaxTestAttempts: ts.MaxTestAttempts,
 			})
 			if err != nil {
 				s.log.Error("starting new scheduled test suite run failed", "error", err, "test-suite", ts.Name)
@@ -374,9 +374,13 @@ func (s *Server) startSchedules() error {
 // test suite run in a pending state and kicks off the execution of the run in a separate
 // goroutine.
 func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams) (model.TestSuiteRun, error) {
-	if option.Reference == "" {
-		// TODO: should we generate a new random reference when none is passed?
-		// OR e.g. base64 encode suitename+initial-run-id
+	// if option.Reference == "" {
+	// TODO: should we generate a new random reference when none is passed?
+	// OR e.g. base64 encode suitename+initial-run-id
+	// }
+
+	if option.MaxTestAttempts == 0 {
+		option.MaxTestAttempts = ts.MaxTestAttempts
 	}
 
 	tsr := model.TestSuiteRun{
@@ -433,9 +437,8 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 	return tsr, nil
 }
 
-// runTestSuite executes a test suite run. The test suite run can be new or one that
-// is continued/rerun. The testFilter is used to run a subset of tests. If nil the testFilter
-// of the TestSuiteRun is used (if any).
+// runTestSuite executes a test suite run. It will run all tests that are either pending
+// or can be retried (attempt<maxattempts).
 func (s *Server) runTestSuite(
 	suite model.TestSuite,
 	tsr model.TestSuiteRun,
@@ -444,6 +447,8 @@ func (s *Server) runTestSuite(
 		// nothing to do here
 		return
 	}
+
+	log := s.log.With("suite-name", suite.Name, "run-id", tsr.ID)
 
 	s.runningTestSuites.Add(1)
 	defer s.runningTestSuites.Done()
@@ -454,7 +459,7 @@ func (s *Server) runTestSuite(
 	if tsr.Start == timeNotSet {
 		tsr.Start = time.Now()
 		if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
-			s.log.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
+			log.Error("updating test suite run failed", "error", err)
 		}
 	}
 
@@ -465,14 +470,29 @@ func (s *Server) runTestSuite(
 	}()
 
 	if err := suite.SafeSetup(); err != nil {
-		s.log.Warn("setup of suite failed", "suite-name", suite.Name, "error", err)
+		log.Warn("setup of suite failed", "error", err)
+		end := time.Now()
 
-		tsr.Result = model.ResultSetupFailed
-		tsr.End = time.Now()
+		tsr.Result = model.ResultFailed
+		tsr.End = end
+		tsr.SetupLogs = fmt.Sprintf("setup failed: %v", err)
+
+		for _, tr := range tsr.LatestTestAttempts() {
+			if tr.Result == model.ResultPending {
+				tr.Result = model.ResultSkipped
+				tr.Logs = "test suite run setup failed: skipped"
+				tr.End = end
+
+				if err = s.storage.UpdateTestRun(ctx, *tr); err != nil {
+					log.Error("could not mark test run as skipped after test suite setup failed", "error", err)
+				}
+			}
+		}
 
 		if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
-			s.log.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
+			log.Error("updating test suite run failed", "error", err)
 		}
+
 		return
 	}
 
@@ -496,9 +516,8 @@ func (s *Server) runTestSuite(
 			newAttempt := tr.NewAttempt()
 
 			if err := s.storage.InsertTestRun(ctx, newAttempt); err != nil {
-				s.log.Error("could not insert new test run attempt", "suite-name", tsr.SuiteName, "error", err)
+				log.Error("could not insert new test run attempt", "error", err)
 				return
-				// TODO
 			}
 			testsToRun = append(testsToRun, &newAttempt)
 			tsr.TestResults = append(tsr.TestResults, &newAttempt)
@@ -506,7 +525,7 @@ func (s *Server) runTestSuite(
 	}
 
 	if err := suite.SafeTeardown(); err != nil {
-		s.log.Warn("teardown of suite failed", "suite-name", suite.Name, "error", err)
+		log.Warn("teardown of suite failed", "error", err)
 	}
 
 	// TODO: Add the plugin context to the `testRunFinishedEvent`
@@ -520,7 +539,7 @@ func (s *Server) runTestSuite(
 	tsr.Flaky = tsr.IsFlaky()
 
 	if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
-		s.log.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
+		log.Error("updating test suite run failed", "error", err)
 	}
 
 	if tsr.Result != model.ResultPending {
@@ -602,12 +621,12 @@ func (h *Server) mapTestSuites() error {
 		}
 
 		mappedTs := model.TestSuite{
-			Name:       ts.Name,
-			Namespace:  ts.Namespace,
-			MaxRetries: ts.MaxRetries,
-			Setup:      ts.Setup,
-			Teardown:   ts.Teardown,
-			Tests:      make(map[string]model.TestFunc),
+			Name:            ts.Name,
+			Namespace:       ts.Namespace,
+			MaxTestAttempts: ts.MaxTestAttempts,
+			Setup:           ts.Setup,
+			Teardown:        ts.Teardown,
+			Tests:           make(map[string]model.TestFunc),
 		}
 
 		for _, t := range ts.Tests {
@@ -623,7 +642,7 @@ func (h *Server) mapTestSuites() error {
 func testName(tf TestFunc) string {
 	fullFuncName := runtime.FuncForPC(reflect.ValueOf(tf).Pointer()).Name()
 
-	packageIndex := strings.LastIndex(fullFuncName, ".") + 1
-	// remove the package name
-	return fullFuncName[packageIndex:]
+	funcNameIndex := strings.LastIndex(fullFuncName, ".") + 1
+	// strip the package name
+	return fullFuncName[funcNameIndex:]
 }

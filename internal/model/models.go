@@ -41,7 +41,7 @@ type TestSuiteRun struct {
 }
 
 func (t TestSuiteRun) ShouldRetry(tr TestRun) bool {
-	return tr.Result == ResultFailed && tr.Attempt < t.Params.MaxRetries
+	return tr.Result == ResultFailed && tr.Attempt < t.Params.MaxTestAttempts
 }
 
 type RunParams struct {
@@ -49,9 +49,9 @@ type RunParams struct {
 	TriggeredBy string
 	// Reference can be set when starting a new test suite run to identify
 	// a test run by a user provided value.
-	Reference  string
-	MaxRetries int
-	Timeout    time.Duration
+	Reference       string
+	MaxTestAttempts int
+	Timeout         time.Duration
 	// TestFilter filters out a subset of the tests and skips the
 	// remaining ones (not implemented yet).
 	TestFilter      string
@@ -61,7 +61,7 @@ type RunParams struct {
 func (tsr TestSuiteRun) ResultFromTestResults() Result {
 	result := ResultPassed
 
-	for _, r := range tsr.TestResults {
+	for _, r := range tsr.LatestTestAttempts() {
 		if r.Result == ResultPending {
 			return ResultPending
 		}
@@ -74,17 +74,23 @@ func (tsr TestSuiteRun) ResultFromTestResults() Result {
 	return result
 }
 
-// func (tsr TestSuiteRun) LatestTestAttempt(testName string) *TestRun {
-// 	testResult := &TestRun{}
-// 	for i := range tsr.TestResults {
-// 		t := &tsr.TestResults[i]
-// 		if t.Name == testName && t.Attempt > testResult.Attempt {
-// 			testResult = t
-// 		}
-// 	}
+func (tsr TestSuiteRun) LatestTestAttempts() map[string]*TestRun {
+	latestAttempts := map[string]*TestRun{}
 
-// 	return testResult
-// }
+	for i := range tsr.TestResults {
+		tr := tsr.TestResults[i]
+
+		if trMap, ok := latestAttempts[tr.Name]; !ok || trMap.Attempt < tr.Attempt {
+			latestAttempts[tr.Name] = tr
+		}
+	}
+
+	return latestAttempts
+}
+
+func (tsr TestSuiteRun) LatestTestAttempt(testName string) *TestRun {
+	return tsr.LatestTestAttempts()[testName]
+}
 
 func (tsr TestSuiteRun) IsFlaky() bool {
 	for _, r := range tsr.TestResults {
@@ -111,15 +117,7 @@ func (tsr TestSuiteRun) PendingTests() []*TestRun {
 func (tsr TestSuiteRun) TestSuiteDuration() int64 {
 	duration := int64(0)
 
-	attempts := map[string]*TestRun{}
-
-	for _, r := range tsr.TestResults {
-		if a, ok := attempts[r.Name]; !ok || a.Attempt < r.Attempt {
-			attempts[r.Name] = r
-		}
-	}
-
-	for _, r := range attempts {
+	for _, r := range tsr.LatestTestAttempts() {
 		duration += r.DurationInMS
 	}
 
@@ -164,11 +162,10 @@ func (t TestRun) NewAttempt() TestRun {
 type Result string
 
 const (
-	ResultPending     Result = "pending"
-	ResultSkipped     Result = "skipped"
-	ResultPassed      Result = "passed"
-	ResultFailed      Result = "failed"
-	ResultSetupFailed Result = "setup-failed"
+	ResultPending Result = "pending"
+	ResultSkipped Result = "skipped"
+	ResultPassed  Result = "passed"
+	ResultFailed  Result = "failed"
 )
 
 type TestContext map[string]any
@@ -185,7 +182,7 @@ type TestSuite struct {
 	// Name of the testsuite
 	Name string `json:"name"`
 	// TestRetries is the amount of times a test is retried when failing.
-	MaxRetries int
+	MaxTestAttempts int
 	// Namespace allows grouping of test suites, e.g. by team name.
 	Namespace string
 	Setup     func() error
@@ -193,45 +190,39 @@ type TestSuite struct {
 	Tests     map[string]TestFunc
 }
 
-func (t TestSuite) SafeTeardown() error {
+func (t TestSuite) SafeTeardown() (err error) {
 	if t.Teardown == nil {
 		return nil
 	}
 
-	var err error
-
 	defer func() {
 		r := recover()
 
 		if r != nil {
-			err = fmt.Errorf("%v", err)
+			err = fmt.Errorf("%v", r)
 		}
 	}()
 
 	err = t.Teardown()
-
-	return err
+	return
 }
 
-func (t TestSuite) SafeSetup() error {
+func (t TestSuite) SafeSetup() (err error) {
 	if t.Setup == nil {
 		return nil
 	}
-
-	var err error
 
 	defer func() {
 		r := recover()
 
 		if r != nil {
-			err = fmt.Errorf("%v", err)
+			err = fmt.Errorf("%v", r)
 		}
 	}()
 
 	// TODO: allow setup to add values to the runtime context?
 	err = t.Setup()
-
-	return err
+	return
 }
 
 func (t TestSuite) FilterTests(filter *regexp.Regexp) []string {

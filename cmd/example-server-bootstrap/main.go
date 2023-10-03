@@ -27,8 +27,8 @@ func main() {
 			},
 		}),
 		handoff.WithTestSuite(handoff.TestSuite{
-			Name:       "my-app",
-			MaxRetries: 3,
+			Name:            "my-app",
+			MaxTestAttempts: 3,
 			Tests: []handoff.TestFunc{
 				Flaky,
 				Sleep,

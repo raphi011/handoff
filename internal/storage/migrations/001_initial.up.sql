@@ -18,7 +18,7 @@ CREATE TABLE TestSuiteRun(
     -- options
     triggeredBy TEXT NOT NULL,
     reference TEXT NOT NULL,
-    maxRetries INT NOT NULL,
+    maxTestAttempts INT NOT NULL,
     testFilter TEXT NOT NULL,
     timeoutDuration TEXT NOT NULL,
 
