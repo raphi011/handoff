@@ -17,6 +17,10 @@ import (
 
 var te *test
 
+const (
+	defaultTimeout = 3 * time.Second
+)
+
 func TestMain(m *testing.M) {
 	te = acceptanceTest()
 
@@ -68,7 +72,7 @@ func acceptanceTest() *test {
 	// save go test args
 	args := os.Args
 	// random port and in-memory database
-	os.Args = []string{"handoff-test", "-p", "0", "-d", ""}
+	os.Args = []string{"handoff-test", "-p", "0", "-d", "", "-t", "./testdata/exampleplugin"}
 
 	h := handoff.New(
 		handoff.WithTestSuite(handoff.TestSuite{
