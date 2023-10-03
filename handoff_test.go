@@ -146,7 +146,3 @@ func (ti *test) waitForTestSuiteRunWithResult(t *testing.T, timeout time.Duratio
 		}
 	}
 }
-
-func (ti *test) shutdown() {
-	ti.h.Shutdown()
-}

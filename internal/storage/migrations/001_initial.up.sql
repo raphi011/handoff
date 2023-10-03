@@ -17,6 +17,8 @@ CREATE TABLE TestSuiteRun(
     PRIMARY KEY(id, suiteName)
 ) STRICT;
 
+CREATE INDEX TsrName ON TestSuiteRun(suiteName);
+
 CREATE TABLE TestRun(
     suiteName TEXT NOT NULL,
     suiteRunId INTEGER NOT NULL,

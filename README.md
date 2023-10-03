@@ -23,6 +23,11 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 
 4. A combination of 2 & 3.
 
+## Test best practices
+
+* Pass in the test context for longer running operations and check if it was cancelled.
+* Only log messages via t.Log/t.Logf as other log messages will not show up in the test logs.
+
 ## Planned features
 
 - [ ] (Feature) Write a tool "transformcli" that uses go:generate and go/ast to transform handoff tests and suites to standard go tests (suite -> test with subtests + init and cleanup)

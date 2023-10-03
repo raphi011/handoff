@@ -19,6 +19,9 @@ type TestSuiteRun struct {
 	// remaining ones (not implemented yet).
 	TestFilter      string
 	TestFilterRegex *regexp.Regexp
+	// Reference can be set when starting a new test suite run to identify
+	// a test run by a user provided value.
+	Reference string
 	// Tests counts the total amount of tests in the suite.
 	Tests int
 	// Scheduled is the time when the test was triggered, e.g.
@@ -56,11 +59,30 @@ func (tsr TestSuiteRun) ResultFromTestResults() Result {
 	return result
 }
 
+func (tsr TestSuiteRun) LatestTestAttempt(testName string) *TestRun {
+	testResult := &TestRun{}
+	for i := range tsr.TestResults {
+		t := &tsr.TestResults[i]
+		if t.Name == testName && t.Attempt > testResult.Attempt {
+			testResult = t
+		}
+	}
+
+	return testResult
+}
+
 func (tsr TestSuiteRun) TestSuiteDuration() int64 {
 	duration := int64(0)
 
-	// todo: only take latest attempt of each individual test
+	attempts := map[string]TestRun{}
+
 	for _, r := range tsr.TestResults {
+		if attempts[r.Name].Attempt < r.Attempt {
+			attempts[r.Name] = r
+		}
+	}
+
+	for _, r := range attempts {
 		duration += r.DurationInMS
 	}
 

@@ -102,6 +102,7 @@ type TestSuite struct {
 	Namespace string
 	Setup     func() error
 	Teardown  func() error
+	Timeout   time.Duration
 	Tests     []TestFunc
 }
 
@@ -152,14 +153,12 @@ func (h *Server) Run() error {
 
 	signal.Notify(h.exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	slog.Info("Connecting to DB")
 	db, err := storage.New(h.config.DatabaseFilePath)
 	if err != nil {
 		return fmt.Errorf("init storage: %w", err)
 	}
 	h.storage = db
 
-	slog.Info("Starting schedules")
 	if err := h.startSchedules(); err != nil {
 		return fmt.Errorf("start schedules: %w", err)
 	}
@@ -422,7 +421,12 @@ func (s *Server) runTestSuite(
 	s.runningTestSuites.Add(1)
 	defer s.runningTestSuites.Done()
 
-	ctx := context.Background()
+	ctx, err := s.storage.StartTransaction(context.Background())
+	if err != nil {
+		slog.Error("start run test suite db transaction", "suite-name", suite.Name, "error", err)
+		return
+	}
+	defer s.storage.RollbackTransaction(ctx)
 
 	timeNotSet := time.Time{}
 	if tsr.Start == timeNotSet {
@@ -451,24 +455,12 @@ func (s *Server) runTestSuite(
 		}
 	}
 
-	latestTestAttempt := func(testName string) *model.TestRun {
-		testResult := &model.TestRun{}
-		for i := range tsr.TestResults {
-			t := &tsr.TestResults[i]
-			if t.Name == testName && t.Attempt > testResult.Attempt {
-				testResult = t
-			}
-		}
-
-		return testResult
-	}
-
 	if testFilter == nil {
 		testFilter = tsr.TestFilterRegex
 	}
 
 	for testName := range suite.FilterTests(testFilter) {
-		tr := latestTestAttempt(testName)
+		tr := tsr.LatestTestAttempt(testName)
 
 		if forceRun {
 			forcedRun := tr.NewForcedAttempt()
@@ -483,7 +475,6 @@ func (s *Server) runTestSuite(
 			tsr.TestResults = append(tsr.TestResults, forcedRun)
 
 			tr = &tsr.TestResults[len(tsr.TestResults)-1]
-
 		} else if tr.Result != model.ResultPending {
 			continue
 		}
@@ -512,6 +503,10 @@ func (s *Server) runTestSuite(
 
 	if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
 		slog.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
+	}
+
+	if err = s.storage.CommitTransaction(ctx); err != nil {
+		slog.Error("commiting test suite run transaction", "error", err)
 	}
 
 	if tsr.Result != model.ResultPending {

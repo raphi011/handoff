@@ -1,6 +1,7 @@
 package handoff
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -16,9 +17,10 @@ type T struct {
 	testName       string
 	logs           strings.Builder
 	result         model.Result
-	runtimeContext map[string]any
+	runtimeContext model.TestContext
 	cleanupFunc    func()
 	softFailure    bool
+	ctx            context.Context
 }
 
 func (t *T) Cleanup(c func()) {
@@ -26,13 +28,13 @@ func (t *T) Cleanup(c func()) {
 }
 
 func (t *T) Error(args ...any) {
-	t.result = model.ResultFailed
+	t.Fail()
 	t.Log(args...)
 }
 
 func (t *T) Errorf(format string, args ...any) {
-	t.result = model.ResultFailed
 	t.Logf(format, args...)
+	t.Fail()
 }
 
 func (t *T) Fail() {
@@ -40,7 +42,7 @@ func (t *T) Fail() {
 }
 
 func (t *T) FailNow() {
-	t.result = model.ResultFailed
+	t.Fail()
 	panic(failTestErr{})
 }
 
@@ -102,15 +104,19 @@ func (t *T) TempDir() string {
 /* Handoff specific functions that are not part of the testing.TB interface */
 /* ------------------------------------------------------------------------ */
 
-func (t *T) GetContext(key string) any {
-	return t.runtimeContext[key]
+func (t *T) Context() context.Context {
+	return t.ctx
 }
 
 func (t *T) SoftFailure() {
 	t.softFailure = true
 }
 
-func (t *T) SetContext(key string, value any) {
+func (t *T) Value(key string) any {
+	return t.runtimeContext[key]
+}
+
+func (t *T) SetValue(key string, value any) {
 	t.runtimeContext[key] = value
 }
 
