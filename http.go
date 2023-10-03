@@ -119,31 +119,7 @@ func (s *Server) startTestSuite(w http.ResponseWriter, r *http.Request, p httpro
 }
 
 func (s *Server) rerunTestSuite(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	suite, err := s.loadTestSuite(r, p)
-	if err != nil {
-		s.httpError(w, err)
-		return
-	}
-
-	var testFilter *regexp.Regexp
-
-	if filterParam := r.URL.Query().Get("filter"); filterParam != "" {
-		testFilter, err = regexp.Compile(filterParam)
-		if err != nil {
-			s.httpError(w, malformedRequestError{param: "filter", reason: "invalid regex"})
-			return
-		}
-	}
-
-	tsr, err := s.loadTestSuiteRun(context.Background(), p)
-	if err != nil {
-		s.httpError(w, err)
-		return
-	}
-
-	s.runTestSuite(suite, tsr, testFilter, true)
-
-	s.writeResponse(w, r, http.StatusAccepted, tsr)
+	// TODO create a new test suite run with the same reference
 }
 
 func (s *Server) getTestSuites(w http.ResponseWriter, r *http.Request, p httprouter.Params) {

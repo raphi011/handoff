@@ -244,7 +244,7 @@ func (h *Server) resumePendingTestRuns() {
 			continue
 		}
 
-		go h.runTestSuite(testSuite, tsr, nil, false)
+		go h.runTestSuite(testSuite, tsr, nil)
 	}
 
 	if len(pendingRuns) > 0 {
@@ -387,7 +387,6 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, te
 			Name:       testName,
 			Result:     result,
 			Attempt:    1,
-			Forced:     false,
 			Context:    model.TestContext{},
 		}
 
@@ -403,20 +402,18 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, te
 		return model.TestSuiteRun{}, fmt.Errorf("unable to persist the test suite run: %w", err)
 	}
 
-	go s.runTestSuite(ts, tsr, tsr.TestFilterRegex, false)
+	go s.runTestSuite(ts, tsr, tsr.TestFilterRegex)
 
 	return tsr, nil
 }
 
 // runTestSuite executes a test suite run. The test suite run can be new or one that
 // is continued/rerun. The testFilter is used to run a subset of tests. If nil the testFilter
-// of the TestSuiteRun is used (if any). If `forceRun` is set to true all tests that match the
-// filter are executed again even if a previous attempt succeeded or failed.
+// of the TestSuiteRun is used (if any).
 func (s *Server) runTestSuite(
 	suite model.TestSuite,
 	tsr model.TestSuiteRun,
 	testFilter *regexp.Regexp,
-	forceRun bool,
 ) {
 	s.runningTestSuites.Add(1)
 	defer s.runningTestSuites.Done()
@@ -462,20 +459,7 @@ func (s *Server) runTestSuite(
 	for testName := range suite.FilterTests(testFilter) {
 		tr := tsr.LatestTestAttempt(testName)
 
-		if forceRun {
-			forcedRun := tr.NewForcedAttempt()
-
-			var err error
-			forcedRun.Attempt, err = s.storage.InsertForcedTestRun(ctx, forcedRun)
-			if err != nil {
-				slog.Error("unable to persist forced test run", "error", err)
-				return
-			}
-
-			tsr.TestResults = append(tsr.TestResults, forcedRun)
-
-			tr = &tsr.TestResults[len(tsr.TestResults)-1]
-		} else if tr.Result != model.ResultPending {
+		if tr.Result != model.ResultPending {
 			continue
 		}
 

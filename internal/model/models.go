@@ -97,8 +97,6 @@ type TestRun struct {
 	Result Result `json:"result"`
 	// Test run attempt counter
 	Attempt int `json:"attempt"`
-	// Was this test attempt manually rerun/forced?
-	Forced bool `json:"forced"`
 	// SoftFailure if set to true, does not fail a test suite when the test run fails.
 	SoftFailure bool `json:"softFailure"`
 	// Logs contains log messages written by the test itself.
@@ -114,17 +112,6 @@ type TestRun struct {
 	// e.g. contain correlation ids or links to external services that may help debugging a test run
 	// (among other things).
 	Context TestContext `json:"context"`
-}
-
-func (t TestRun) NewForcedAttempt() TestRun {
-	return TestRun{
-		SuiteName:  t.SuiteName,
-		SuiteRunID: t.SuiteRunID,
-		Name:       t.Name,
-		Result:     ResultPending,
-		Forced:     true,
-		Start:      time.Now(),
-	}
 }
 
 type Result string

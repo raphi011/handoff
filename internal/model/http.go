@@ -41,8 +41,6 @@ type TestRunHTTP struct {
 	Result Result `json:"result"`
 	// Test run attempt counter
 	Attempt int `json:"attempt"`
-	// Was this test attempt manually rerun/forced?
-	Forced bool `json:"forced"`
 	// SoftFailure if set to true, does not fail a test suite when the test run fails.
 	SoftFailure bool `json:"softFailure"`
 	// Logs contains log messages written by the test itself.
