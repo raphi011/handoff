@@ -3,7 +3,6 @@ package handoff
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/raphi011/handoff/internal/model"
@@ -128,20 +127,22 @@ func (t *T) Result() model.Result {
 	return t.result
 }
 
-func (t *T) runTestCleanup() {
+func (t *T) runTestCleanup() error {
 	if t.cleanupFunc == nil {
-		return
+		return nil
 	}
 
-	defer func() {
-		err := recover()
+	var err error
 
-		if err != nil {
-			slog.Warn("cleanup func panic'd", "error", err, "suite-name", t.suiteName, "test-name", t.testName)
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("cleanup func panic'd: %v", err)
 		}
 	}()
 
 	t.cleanupFunc()
+
+	return err
 }
 
 // skipTestErr is passed to panic() to signal

@@ -6,6 +6,7 @@
    <body>
       <h1>{{ .SuiteName }}</h1>
       <p>Started at {{ .Start.Format "02.01 15:04:05" }}, took {{ .DurationInMS }}ms to finish.</p>
+      <p>Is flaky: {{ .Flaky }}</p>
       <table>
          <tr>
             <th>Name</th>

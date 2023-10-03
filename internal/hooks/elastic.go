@@ -6,8 +6,8 @@ import (
 	"github.com/raphi011/handoff/internal/model"
 )
 
-// ElasticSearchPlugin supports fetching logs created by test runs.
-type ElasticSearchPlugin struct {
+// ElasticSearchHook supports fetching logs created by test runs.
+type ElasticSearchHook struct {
 	client *elasticsearch.Client
 
 	// searchKeys is a list of runContext keys that can be used
@@ -15,11 +15,11 @@ type ElasticSearchPlugin struct {
 	searchKeys []string
 }
 
-func (p *ElasticSearchPlugin) Name() string {
+func (p *ElasticSearchHook) Name() string {
 	return "elastic-search"
 }
 
-func (p *ElasticSearchPlugin) Init() error {
+func (p *ElasticSearchHook) Init() error {
 	return nil
 }
 
@@ -27,7 +27,7 @@ const (
 	logstashCorrelationIDKey = "elastic-search.correlationID"
 )
 
-func (p *ElasticSearchPlugin) TestFinished(
+func (p *ElasticSearchHook) TestFinished(
 	suite model.TestSuite,
 	run model.TestSuiteRun,
 	testName string,
@@ -35,7 +35,7 @@ func (p *ElasticSearchPlugin) TestFinished(
 	p.fetchLogsByCorrelationID(runContext)
 }
 
-func (p *ElasticSearchPlugin) fetchLogsByCorrelationID(runContext map[string]any) {
+func (p *ElasticSearchHook) fetchLogsByCorrelationID(runContext map[string]any) {
 	// es := p.client
 
 	// query := map[string]string{}

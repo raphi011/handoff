@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"regexp"
@@ -37,7 +36,6 @@ func (s *Server) runHTTP() error {
 	router.GET("/ready", s.getReady)
 
 	router.POST("/suites/:suite-name/runs", s.startTestSuite)
-	router.POST("/suites/:suite-name/runs/:run-id", s.rerunTestSuite)
 	router.GET("/suites", s.getTestSuites)
 	router.GET("/suites/:suite-name/runs", s.getTestSuiteRuns)
 	router.GET("/suites/:suite-name/runs/:run-id", s.getTestSuiteRun)
@@ -59,12 +57,12 @@ func (s *Server) runHTTP() error {
 		s.config.Port = l.Addr().(*net.TCPAddr).Port
 	}
 
-	slog.Info("Starting http server", "port", s.config.Port)
+	s.log.Info("Starting http server", "port", s.config.Port)
 
 	go func() {
 		err = s.httpServer.Serve(l)
 		if err != nil {
-			slog.Error("http server failed", "error", err)
+			s.log.Error("http server failed", "error", err)
 		}
 	}()
 
@@ -82,7 +80,7 @@ func (s *Server) stopHTTP() context.Context {
 		err := s.httpServer.Shutdown(timeoutCtx)
 
 		if err != nil {
-			slog.Warn("Http listener shutdown returned an error", "error", err)
+			s.log.Warn("Http listener shutdown returned an error", "error", err)
 		}
 	}()
 
@@ -96,30 +94,33 @@ func (s *Server) startTestSuite(w http.ResponseWriter, r *http.Request, p httpro
 		return
 	}
 
-	var filter *regexp.Regexp
+	var filterRegex *regexp.Regexp
+	filter := r.URL.Query().Get("filter")
+	reference := r.URL.Query().Get("ref")
 
-	if filterParam := r.URL.Query().Get("filter"); filterParam != "" {
-		filter, err = regexp.Compile(filterParam)
+	if filter != "" {
+		filterRegex, err = regexp.Compile(filter)
 		if err != nil {
 			s.httpError(w, malformedRequestError{param: "filter", reason: "invalid regex"})
 			return
 		}
 
-		if len(suite.FilterTests(filter)) == 0 {
+		if len(suite.FilterTests(filterRegex)) == 0 {
 			s.httpError(w, malformedRequestError{param: "filter", reason: "no tests match the given filter"})
 		}
 	}
 
-	tsr, err := s.startNewTestSuiteRun(suite, "api", filter)
+	tsr, err := s.startNewTestSuiteRun(suite, model.RunParams{
+		TriggeredBy:     "api",
+		TestFilterRegex: filterRegex,
+		TestFilter:      filter,
+		Reference:       reference,
+	})
 	if err != nil {
 		s.httpError(w, err)
 	}
 
 	s.writeResponse(w, r, http.StatusCreated, tsr)
-}
-
-func (s *Server) rerunTestSuite(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	// TODO create a new test suite run with the same reference
 }
 
 func (s *Server) getTestSuites(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -170,7 +171,7 @@ func (s *Server) getTestSuiteRuns(w http.ResponseWriter, r *http.Request, p http
 	}
 
 	if err := s.writeResponse(w, r, http.StatusOK, testRuns); err != nil {
-		slog.Warn("writing get test suite runs response: %v", err)
+		s.log.Warn("writing get test suite runs response: %v", err)
 	}
 }
 
@@ -290,5 +291,5 @@ func (s *Server) httpError(w http.ResponseWriter, err error) {
 	}
 
 	w.WriteHeader(http.StatusInternalServerError)
-	slog.Warn("internal server error", "error", err)
+	s.log.Warn("internal server error", "error", err)
 }

@@ -26,10 +26,11 @@ import (
 var fs embed.FS
 
 type Storage struct {
-	db *sqlx.DB
+	db  *sqlx.DB
+	log *slog.Logger
 }
 
-func New(dbFilename string) (*Storage, error) {
+func New(dbFilename string, log *slog.Logger) (*Storage, error) {
 	db, err := sqlx.Connect("sqlite", connectionString(dbFilename))
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
@@ -43,15 +44,18 @@ func New(dbFilename string) (*Storage, error) {
 		return nil, fmt.Errorf("unable to retrieve sqlite version: %w", err)
 	}
 
-	slog.Info("Using sqlite version: " + version)
+	log.Info("Using sqlite version: " + version)
 
-	if err = migrateDB(db); err != nil {
+	s := &Storage{
+		db:  db,
+		log: log,
+	}
+
+	if err = s.migrateDB(db); err != nil {
 		return nil, err
 	}
 
-	return &Storage{
-		db: db,
-	}, nil
+	return s, nil
 }
 
 func (s *Storage) Close() error {
@@ -91,7 +95,7 @@ func randomAlphanumeric(length int) string {
 	return string(b)
 }
 
-func migrateDB(db *sqlx.DB) error {
+func (s *Storage) migrateDB(db *sqlx.DB) error {
 	d, err := iofs.New(fs, "migrations")
 	if err != nil {
 		return fmt.Errorf("load db migrations: %w", err)
@@ -110,7 +114,7 @@ func migrateDB(db *sqlx.DB) error {
 	err = m.Up()
 
 	if err == migrate.ErrNoChange {
-		slog.Info("No migrations have been applied. The DB is at the latest state.")
+		s.log.Info("No migrations have been applied. The DB is at the latest state.")
 	} else if err != nil {
 		return fmt.Errorf("applying db migrations: %w", err)
 	}
@@ -145,7 +149,7 @@ func (s *Storage) RollbackTransaction(ctx context.Context) {
 	if v != nil {
 		err := v.(*sqlx.Tx).Rollback()
 		if err != nil && err != sql.ErrTxDone {
-			slog.Warn("could not rollback transaction", "error", err)
+			s.log.Warn("could not rollback transaction", "error", err)
 		}
 	}
 }
@@ -160,6 +164,7 @@ func (s *Storage) getDB(ctx context.Context) commonDB {
 	return v.(*sqlx.Tx)
 }
 
+// functions shared by `*sqlx.Tx` and `*sqlx.Db`
 type commonDB interface {
 	NamedExecContext(ctx context.Context, query string, arg interface{}) (sql.Result, error)
 	NamedQuery(query string, arg interface{}) (*sqlx.Rows, error)
@@ -170,21 +175,24 @@ func (s *Storage) SaveTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) 
 	db := s.getDB(ctx)
 
 	r, err := db.NamedQuery(`INSERT INTO TestSuiteRun 
-	(suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, id) VALUES
-	(:suiteName, :environment, :reference, :result, :testFilter, :scheduledTime, :startTime, :endTime, :setupLogs, :triggeredBy, 
+	(suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxRetries, timeoutDuration, flaky, id) VALUES
+	(:suiteName, :environment, :reference, :result, :testFilter, :scheduledTime, :startTime, :endTime, :setupLogs, :triggeredBy, :maxRetries, :timeoutDuration, :flaky,
 		COALESCE((select max(id)+1 from TestSuiteRun where suiteName=:suiteName), 1))
 	RETURNING id`,
 		map[string]any{
-			"suiteName":     tsr.SuiteName,
-			"environment":   tsr.Environment,
-			"reference":     tsr.Reference,
-			"result":        tsr.Result,
-			"testFilter":    tsr.TestFilter,
-			"scheduledTime": timeFormat(tsr.Scheduled),
-			"startTime":     timeFormat(tsr.Start),
-			"endTime":       timeFormat(tsr.End),
-			"setupLogs":     tsr.SetupLogs,
-			"triggeredBy":   tsr.TriggeredBy,
+			"suiteName":       tsr.SuiteName,
+			"environment":     tsr.Environment,
+			"result":          tsr.Result,
+			"scheduledTime":   timeFormat(tsr.Scheduled),
+			"startTime":       timeFormat(tsr.Start),
+			"endTime":         timeFormat(tsr.End),
+			"flaky":           tsr.Flaky,
+			"setupLogs":       tsr.SetupLogs,
+			"triggeredBy":     tsr.Params.TriggeredBy,
+			"reference":       tsr.Params.Reference,
+			"maxRetries":      tsr.Params.MaxRetries,
+			"testFilter":      tsr.Params.TestFilter,
+			"timeoutDuration": tsr.Params.Timeout,
 		})
 	if err != nil {
 		return -1, err
@@ -209,7 +217,7 @@ func (s *Storage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun
 	db := s.getDB(ctx)
 
 	_, err := db.NamedExecContext(ctx, `UPDATE TestSuiteRun SET
-	result=:result, startTime=:startTime, endTime=:endTime, setupLogs=:setupLogs
+	result=:result, startTime=:startTime, endTime=:endTime, setupLogs=:setupLogs, flaky=:flaky
 	where id = :id and suiteName = :suiteName`,
 		map[string]any{
 			"result":    tsr.Result,
@@ -218,6 +226,7 @@ func (s *Storage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun
 			"setupLogs": tsr.SetupLogs,
 			"id":        tsr.ID,
 			"suiteName": tsr.SuiteName,
+			"flaky":     tsr.Flaky,
 		})
 
 	return err
@@ -227,7 +236,7 @@ func (s *Storage) LoadTestSuiteRun(ctx context.Context, suiteName string, runID 
 	db := s.getDB(ctx)
 
 	r, err := db.NamedQuery(`SELECT 
-	id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy
+	id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxRetries, timeoutDuration
 	FROM TestSuiteRun WHERE suiteName = :suiteName and id = :id`,
 		map[string]any{
 			"suiteName": suiteName,
@@ -250,7 +259,7 @@ func (s *Storage) LoadPendingTestSuiteRuns(ctx context.Context) ([]model.TestSui
 
 	runs := []model.TestSuiteRun{}
 	r, err := db.QueryxContext(ctx, `SELECT 
-		id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy
+		id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxRetries, timeoutDuration
 		FROM TestSuiteRun WHERE result='pending'`)
 	if err != nil {
 		return runs, err
@@ -274,7 +283,7 @@ func (s *Storage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string)
 
 	runs := []model.TestSuiteRun{}
 	r, err := db.NamedQuery(`SELECT 
-		id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy
+		id, suiteName, environment, reference, result, testFilter, scheduledTime, startTime, endTime, setupLogs, triggeredBy, maxRetries, timeoutDuration
 		FROM TestSuiteRun WHERE suiteName=:suiteName`,
 		map[string]any{"suiteName": suiteName},
 	)
@@ -295,10 +304,10 @@ func (s *Storage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string)
 	return runs, nil
 }
 
-func (s *Storage) LoadTestRuns(ctx context.Context, suiteName string, tsrID int) ([]model.TestRun, error) {
+func (s *Storage) LoadTestRuns(ctx context.Context, suiteName string, tsrID int) ([]*model.TestRun, error) {
 	db := s.getDB(ctx)
 
-	runs := []model.TestRun{}
+	runs := []*model.TestRun{}
 	r, err := db.NamedQuery(`SELECT 
 		suiteName, suiteRunId, testName, attempt, result, compressedLogs, context, startTime, endTime, softFailure
 		FROM TestRun WHERE suiteName=:suiteName and suiteRunId=:suiteRunId`,
@@ -318,7 +327,7 @@ func (s *Storage) LoadTestRuns(ctx context.Context, suiteName string, tsrID int)
 			return nil, err
 		}
 
-		runs = append(runs, tr)
+		runs = append(runs, &tr)
 	}
 
 	return runs, nil
@@ -513,14 +522,16 @@ func scanTestSuiteRun(r *sqlx.Rows) (model.TestSuiteRun, error) {
 		&tsr.ID,
 		&tsr.SuiteName,
 		&tsr.Environment,
-		&tsr.Reference,
+		&tsr.Params.Reference,
 		&tsr.Result,
-		&tsr.TestFilter,
+		&tsr.Params.TestFilter,
 		&scheduled,
 		&start,
 		&end,
 		&tsr.SetupLogs,
-		&tsr.TriggeredBy,
+		&tsr.Params.TriggeredBy,
+		&tsr.Params.MaxRetries,
+		&tsr.Params.Timeout,
 	)
 	if err != nil {
 		return model.TestSuiteRun{}, fmt.Errorf("scanning test suite run: %w", err)
@@ -538,10 +549,10 @@ func scanTestSuiteRun(r *sqlx.Rows) (model.TestSuiteRun, error) {
 
 	tsr.DurationInMS = tsr.End.Sub(tsr.Start).Milliseconds()
 
-	if tsr.TestFilter != "" {
-		tsr.TestFilterRegex, err = regexp.Compile(tsr.TestFilter)
+	if tsr.Params.TestFilter != "" {
+		tsr.Params.TestFilterRegex, err = regexp.Compile(tsr.Params.TestFilter)
 		if err != nil {
-			return model.TestSuiteRun{}, fmt.Errorf("compiling test filter regex %s: %w", tsr.TestFilter, err)
+			return model.TestSuiteRun{}, fmt.Errorf("compiling test filter regex %s: %w", tsr.Params.TestFilter, err)
 		}
 	}
 

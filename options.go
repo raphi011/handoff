@@ -1,7 +1,6 @@
 package handoff
 
 // WithScheduledRun schedules a TestSuite to run at certain intervals.
-// Ignored in CLI mode.
 func WithScheduledRun(sr ScheduledRun) option {
 	return func(s *Server) {
 		s.schedules = append(s.schedules, sr)
@@ -14,9 +13,9 @@ func WithTestSuiteFiles(files []string) option {
 	}
 }
 
-func WithPlugin(p Plugin) option {
+func WithHook(p Hook) option {
 	return func(s *Server) {
-		s.plugins.all = append(s.plugins.all, p)
+		s.hooks.all = append(s.hooks.all, p)
 	}
 }
 

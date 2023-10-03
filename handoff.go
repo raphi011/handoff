@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -28,8 +30,8 @@ type Server struct {
 	// server configuration
 	config config
 
-	// configured plugins
-	plugins *pluginManager
+	// configured hooks
+	hooks *hookManager
 
 	// a map of all testsuites that must not be modified after
 	// initialisation.
@@ -59,6 +61,8 @@ type Server struct {
 
 	httpServer *http.Server
 
+	log *slog.Logger
+
 	storage *storage.Storage
 }
 
@@ -74,11 +78,11 @@ type config struct {
 
 	// TestSuiteLibraryFiles is a list of library files that will load
 	// additional test suites and scheduled runs.
-	TestSuiteLibraryFiles []string `arg:"-t,--testsuite,env:HANDOFF_TESTSUITE_FILE" help:"optional list of test suite library files"`
+	TestSuiteLibraryFiles []string `arg:"-t,--testsuite,separate,env:HANDOFF_TESTSUITE_FILE" help:"optional list of test suite library files"`
 
 	// List will, if set to true, print all loaded test suites
 	// and immediately exit.
-	ListTestSuites bool `arg:"-l,--list" help:"list all configured test suites and exit" default:"false"`
+	ListTestSuites bool `arg:"-l,--list" help:"list all configured test suites, schedules and hooks and exit" default:"false"`
 
 	// Environment is e.g. the cluster/platform the tests are run on.
 	// This is added to metrics and the testrun information.
@@ -99,11 +103,12 @@ type TestSuite struct {
 	// Name of the testsuite
 	Name string `json:"name"`
 	// Namespace allows grouping of test suites, e.g. by team name.
-	Namespace string
-	Setup     func() error
-	Teardown  func() error
-	Timeout   time.Duration
-	Tests     []TestFunc
+	Namespace  string
+	MaxRetries int
+	Setup      func() error
+	Teardown   func() error
+	Timeout    time.Duration
+	Tests      []TestFunc
 }
 
 // Reexport to allow library users to reference these types
@@ -115,65 +120,77 @@ type option func(s *Server)
 
 // New configures a new Handoff instance.
 func New(opts ...option) *Server {
-	h := &Server{
+	s := &Server{
 		readOnlyTestSuites: map[string]model.TestSuite{},
 		started:            make(chan any),
 		exit:               make(chan os.Signal, 1),
 		shutdown:           make(chan any),
+		log:                slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
 
-	h.plugins = newPluginManager(h.asyncPluginCallback)
+	s.hooks = newHookManager(s.asyncHookCallback)
 
 	for _, o := range opts {
-		o(h)
+		o(s)
 	}
 
-	return h
+	return s
 }
 
-func (h *Server) Run() error {
+func (s *Server) Run() error {
 	startupStart := time.Now()
-	arg.MustParse(&h.config)
 
-	if err := h.loadLibraryFiles(); err != nil {
+	// we want to make sure that the test suite functions only
+	// log using the functions provided through the t struct
+	// and not 'pollute' the server logs, so we need to redirect
+	// the standard test loggers to /dev/null and use a custom one
+	// for the server.
+	log.SetOutput(io.Discard)
+
+	arg.MustParse(&s.config)
+
+	if err := s.loadLibraryFiles(); err != nil {
 		return fmt.Errorf("loading test library files: %w", err)
 	}
 
-	if err := h.mapTestSuites(); err != nil {
+	if err := s.mapTestSuites(); err != nil {
 		return err
 	}
 
-	if h.config.ListTestSuites {
-		h.printTestSuites()
+	if s.config.ListTestSuites {
+		s.printTestSuites()
 	}
 
-	if err := h.plugins.init(); err != nil {
-		return fmt.Errorf("init plugins: %w", err)
+	if err := s.hooks.init(); err != nil {
+		return fmt.Errorf("init hooks: %w", err)
 	}
 
-	signal.Notify(h.exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(s.exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	db, err := storage.New(h.config.DatabaseFilePath)
+	db, err := storage.New(s.config.DatabaseFilePath, s.log)
 	if err != nil {
 		return fmt.Errorf("init storage: %w", err)
 	}
-	h.storage = db
+	s.storage = db
 
-	if err := h.startSchedules(); err != nil {
+	if err := s.startSchedules(); err != nil {
 		return fmt.Errorf("start schedules: %w", err)
 	}
 
-	h.runHTTP()
+	s.runHTTP()
 
-	slog.Info(fmt.Sprintf("Server started after %s", time.Since(startupStart)))
+	s.log.Info(fmt.Sprintf("Server started after %s", time.Since(startupStart)))
 
-	close(h.started)
+	close(s.started)
 
-	h.resumePendingTestRuns()
+	s.resumePendingTestRuns()
 
-	signal := <-h.exit
+	signal := <-s.exit
 
-	h.gracefulShutdown(signal)
+	s.gracefulShutdown(signal)
+
+	// restore logger
+	log.SetOutput(os.Stderr)
 
 	return nil
 }
@@ -185,19 +202,19 @@ func (h *Server) ServerPort() int {
 }
 
 // WaitForStartup blocks until the server has started up.
-func (h *Server) WaitForStartup() {
+func (s *Server) WaitForStartup() {
 	// TODO: maybe respond with the error if startup fails?
-	<-h.started
+	<-s.started
 }
 
 // Shutdown shuts down the server and blocks until it is finished.
-func (h *Server) Shutdown() {
-	h.exit <- os.Interrupt
-	<-h.shutdown
+func (s *Server) Shutdown() {
+	s.exit <- os.Interrupt
+	<-s.shutdown
 }
 
-func (h *Server) loadLibraryFiles() error {
-	for _, f := range h.config.TestSuiteLibraryFiles {
+func (s *Server) loadLibraryFiles() error {
+	for _, f := range s.config.TestSuiteLibraryFiles {
 		p, err := plugin.Open(f)
 		if err != nil {
 			return fmt.Errorf("opening test suite file: %w", err)
@@ -215,45 +232,50 @@ func (h *Server) loadLibraryFiles() error {
 
 		suites, schedules := handoffFunc()
 
-		h._userProvidedTestSuites = append(h._userProvidedTestSuites, suites...)
-		h.schedules = append(h.schedules, schedules...)
+		s._userProvidedTestSuites = append(s._userProvidedTestSuites, suites...)
+		s.schedules = append(s.schedules, schedules...)
 	}
 
 	return nil
 }
 
-func (h *Server) resumePendingTestRuns() {
+func (s *Server) resumePendingTestRuns() {
 	ctx := context.Background()
 
-	pendingRuns, err := h.storage.LoadPendingTestSuiteRuns(ctx)
+	pendingRuns, err := s.storage.LoadPendingTestSuiteRuns(ctx)
 	if err != nil {
-		slog.Warn("Unable to load pending test suite runs", "error", err)
+		s.log.Warn("Unable to load pending test suite runs", "error", err)
 		return
 	}
 
+	continued := 0
+
 	for _, tsr := range pendingRuns {
-		testSuite, ok := h.readOnlyTestSuites[tsr.SuiteName]
+		testSuite, ok := s.readOnlyTestSuites[tsr.SuiteName]
 		if !ok {
-			slog.Warn("Cannot continue pending test suite run, missing test suite", "suite-name", tsr.SuiteName)
+			// TODO: shall we mark these as failed as we cannot continue this run?
+			s.log.Warn("Cannot continue pending test suite run, missing test suite", "suite-name", tsr.SuiteName)
 			continue
 		}
 
-		tsr.TestResults, err = h.storage.LoadTestRuns(ctx, tsr.SuiteName, tsr.ID)
+		tsr.TestResults, err = s.storage.LoadTestRuns(ctx, tsr.SuiteName, tsr.ID)
 		if err != nil {
-			slog.Warn("Unable to load pending test suite test runs", "error", err)
+			s.log.Warn("Unable to load pending test suite test runs", "error", err)
 			continue
 		}
 
-		go h.runTestSuite(testSuite, tsr, nil)
+		continued++
+
+		go s.runTestSuite(testSuite, tsr)
 	}
 
-	if len(pendingRuns) > 0 {
-		slog.Info(fmt.Sprintf("Resumed %d test suite run(s) with pending tests", len(pendingRuns)))
+	if continued > 0 {
+		s.log.Info(fmt.Sprintf("Resumed %d test suite run(s) with pending tests", continued))
 	}
 }
 
 func (s *Server) gracefulShutdown(signal os.Signal) {
-	slog.Info("Received signal, shutting down", "signal", signal.String())
+	s.log.Info("Received signal, shutting down", "signal", signal.String())
 
 	s.shuttingDown = true
 
@@ -261,25 +283,25 @@ func (s *Server) gracefulShutdown(signal os.Signal) {
 	cronStopCtx := s.cron.Stop()
 
 	<-httpStopCtx.Done()
-	slog.Info("Http listener stopped")
+	s.log.Info("Http listener stopped")
 	<-cronStopCtx.Done()
-	slog.Info("Scheduled tests stopped")
+	s.log.Info("Scheduled tests stopped")
 
-	pluginStopCtx := s.plugins.shutdown()
+	pluginStopCtx := s.hooks.shutdown()
 	<-pluginStopCtx.Done()
-	slog.Info("Plugins stopped")
+	s.log.Info("Plugins stopped")
 
 	s.runningTestSuites.Wait()
 
 	if err := s.storage.Close(); err != nil {
-		slog.Warn("Closing DB connection failed", "error", err)
+		s.log.Warn("Closing DB connection failed", "error", err)
 		return
 	}
 
 	close(s.shutdown)
 
-	slog.Info("DB connection closed")
-	slog.Info("Shutdown successful")
+	s.log.Info("DB connection closed")
+	s.log.Info("Shutdown successful")
 }
 
 func (s *Server) printTestSuites() {
@@ -326,9 +348,14 @@ func (s *Server) startSchedules() error {
 		}
 
 		entryID, err := s.cron.AddFunc(schedule.Schedule, func() {
-			_, err := s.startNewTestSuiteRun(ts, "scheduled", schedule.testFilter)
+			_, err := s.startNewTestSuiteRun(ts, model.RunParams{
+				TriggeredBy:     "scheduled",
+				TestFilterRegex: schedule.testFilter,
+				TestFilter:      schedule.TestFilter,
+				MaxRetries:      ts.MaxRetries,
+			})
 			if err != nil {
-				slog.Error("starting new scheduled test suite run failed", "error", err, "test-suite", ts.Name)
+				s.log.Error("starting new scheduled test suite run failed", "error", err, "test-suite", ts.Name)
 			}
 		})
 		if err != nil {
@@ -346,21 +373,20 @@ func (s *Server) startSchedules() error {
 // startNewTestSuiteRun is used to start new test suite runs. It persists the
 // test suite run in a pending state and kicks off the execution of the run in a separate
 // goroutine.
-func (s *Server) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, testFilter *regexp.Regexp) (model.TestSuiteRun, error) {
-	testFilterString := ""
-	if testFilter != nil {
-		testFilterString = testFilter.String()
+func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams) (model.TestSuiteRun, error) {
+	if option.Reference == "" {
+		// TODO: should we generate a new random reference when none is passed?
+		// OR e.g. base64 encode suitename+initial-run-id
 	}
+
 	tsr := model.TestSuiteRun{
-		SuiteName:       ts.Name,
-		TestResults:     []model.TestRun{},
-		Result:          model.ResultPending,
-		TestFilter:      testFilterString,
-		TestFilterRegex: testFilter,
-		Tests:           len(ts.Tests),
-		Scheduled:       time.Now(),
-		TriggeredBy:     triggeredBy,
-		Environment:     s.config.Environment,
+		SuiteName:   ts.Name,
+		TestResults: []*model.TestRun{},
+		Result:      model.ResultPending,
+		Params:      option,
+		Tests:       len(ts.Tests),
+		Scheduled:   time.Now(),
+		Environment: s.config.Environment,
 	}
 
 	ctx, err := s.storage.StartTransaction(context.Background())
@@ -377,7 +403,7 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, te
 	for testName := range ts.Tests {
 		result := model.ResultPending
 
-		if tsr.TestFilterRegex != nil && !tsr.TestFilterRegex.MatchString(testName) {
+		if tsr.Params.TestFilterRegex != nil && !tsr.Params.TestFilterRegex.MatchString(testName) {
 			result = model.ResultSkipped
 		}
 
@@ -395,14 +421,14 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, te
 			return model.TestSuiteRun{}, fmt.Errorf("unable to persist new test run: %w", err)
 		}
 
-		tsr.TestResults = append(tsr.TestResults, tr)
+		tsr.TestResults = append(tsr.TestResults, &tr)
 	}
 
 	if err = s.storage.CommitTransaction(ctx); err != nil {
 		return model.TestSuiteRun{}, fmt.Errorf("unable to persist the test suite run: %w", err)
 	}
 
-	go s.runTestSuite(ts, tsr, tsr.TestFilterRegex)
+	go s.runTestSuite(ts, tsr)
 
 	return tsr, nil
 }
@@ -413,23 +439,22 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, triggeredBy string, te
 func (s *Server) runTestSuite(
 	suite model.TestSuite,
 	tsr model.TestSuiteRun,
-	testFilter *regexp.Regexp,
 ) {
+	if tsr.Result == model.ResultPassed {
+		// nothing to do here
+		return
+	}
+
 	s.runningTestSuites.Add(1)
 	defer s.runningTestSuites.Done()
 
-	ctx, err := s.storage.StartTransaction(context.Background())
-	if err != nil {
-		slog.Error("start run test suite db transaction", "suite-name", suite.Name, "error", err)
-		return
-	}
-	defer s.storage.RollbackTransaction(ctx)
+	ctx := context.Background()
 
 	timeNotSet := time.Time{}
 	if tsr.Start == timeNotSet {
 		tsr.Start = time.Now()
 		if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
-			slog.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
+			s.log.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
 		}
 	}
 
@@ -439,25 +464,22 @@ func (s *Server) runTestSuite(
 		testSuitesRunning.Dec()
 	}()
 
-	if suite.Setup != nil {
-		if err := suite.Setup(); err != nil {
-			slog.Warn("setup of suite failed", "suite-name", suite.Name, "error", err)
+	if err := suite.SafeSetup(); err != nil {
+		s.log.Warn("setup of suite failed", "suite-name", suite.Name, "error", err)
 
-			tsr.Result = model.ResultSetupFailed
-			tsr.End = time.Now()
-			if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
-				slog.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
-			}
-			return
+		tsr.Result = model.ResultSetupFailed
+		tsr.End = time.Now()
+
+		if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
+			s.log.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
 		}
+		return
 	}
 
-	if testFilter == nil {
-		testFilter = tsr.TestFilterRegex
-	}
+	testsToRun := tsr.PendingTests()
 
-	for testName := range suite.FilterTests(testFilter) {
-		tr := tsr.LatestTestAttempt(testName)
+	for i := 0; i < len(testsToRun); i++ {
+		tr := testsToRun[i]
 
 		if tr.Result != model.ResultPending {
 			continue
@@ -467,34 +489,42 @@ func (s *Server) runTestSuite(
 			// we will continue pending test runs on restart
 			continue
 		}
-		s.runTest(suite, &tsr, tr)
-	}
 
-	if suite.Teardown != nil {
-		if err := suite.Teardown(); err != nil {
-			slog.Warn("teardown of suite failed", "suite-name", suite.Name, "error", err)
+		s.runTest(suite, &tsr, tr)
+
+		if tsr.ShouldRetry(*tr) {
+			newAttempt := tr.NewAttempt()
+
+			if err := s.storage.InsertTestRun(ctx, newAttempt); err != nil {
+				s.log.Error("could not insert new test run attempt", "suite-name", tsr.SuiteName, "error", err)
+				return
+				// TODO
+			}
+			testsToRun = append(testsToRun, &newAttempt)
+			tsr.TestResults = append(tsr.TestResults, &newAttempt)
 		}
 	}
 
+	if err := suite.SafeTeardown(); err != nil {
+		s.log.Warn("teardown of suite failed", "suite-name", suite.Name, "error", err)
+	}
+
 	// TODO: Add the plugin context to the `testRunFinishedEvent`
-	s.plugins.notifyTestSuiteFinished(suite, tsr)
+	s.hooks.notifyTestSuiteFinished(suite, tsr)
 
 	tsr.Result = tsr.ResultFromTestResults()
 	if tsr.Result != model.ResultPending {
 		tsr.End = time.Now()
 	}
 	tsr.DurationInMS = tsr.TestSuiteDuration()
+	tsr.Flaky = tsr.IsFlaky()
 
 	if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
-		slog.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
-	}
-
-	if err = s.storage.CommitTransaction(ctx); err != nil {
-		slog.Error("commiting test suite run transaction", "error", err)
+		s.log.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
 	}
 
 	if tsr.Result != model.ResultPending {
-		s.plugins.notifyTestSuiteFinishedAsync(suite, tsr)
+		s.hooks.notifyTestSuiteFinishedAsync(suite, tsr)
 
 		metric.TestSuitesRun.WithLabelValues(suite.Namespace, suite.Name, string(tsr.Result)).Inc()
 	}
@@ -520,7 +550,7 @@ func (s *Server) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRun
 
 		metric.TestRunsTotal.WithLabelValues(suite.Namespace, suite.Name, string(result)).Inc()
 
-		s.plugins.notifyTestFinished(suite, *testSuiteRun, testRun.Name, t.runtimeContext)
+		s.hooks.notifyTestFinished(suite, *testSuiteRun, testRun.Name, t.runtimeContext)
 
 		logs := t.logs
 
@@ -541,19 +571,21 @@ func (s *Server) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRun
 		testRun.Context = t.runtimeContext
 
 		if err := s.storage.UpdateTestRun(context.Background(), *testRun); err != nil {
-			slog.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
+			s.log.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
 		}
 
-		s.plugins.notifyTestFinishedAync(suite, *testSuiteRun, testRun.Name, t.runtimeContext)
+		s.hooks.notifyTestFinishedAync(suite, *testSuiteRun, testRun.Name, t.runtimeContext)
 
-		t.runTestCleanup()
+		if err = t.runTestCleanup(); err != nil {
+			s.log.Warn("test cleanup failed", "suite-name", suite.Name, "error", err)
+		}
 	}()
 
 	suite.Tests[testRun.Name](&t)
 }
 
-// asyncPluginCallback is called by asynchronous plugin hooks and persists the updated plugincontext change.
-func (s *Server) asyncPluginCallback(p Plugin, pluginContext map[string]any) {
+// asyncHookCallback is called by asynchronous hooks and persists the updated plugincontext change.
+func (s *Server) asyncHookCallback(p Hook, pluginContext map[string]any) {
 	// todo
 }
 
@@ -570,11 +602,12 @@ func (h *Server) mapTestSuites() error {
 		}
 
 		mappedTs := model.TestSuite{
-			Name:      ts.Name,
-			Namespace: ts.Namespace,
-			Setup:     ts.Setup,
-			Teardown:  ts.Teardown,
-			Tests:     make(map[string]model.TestFunc),
+			Name:       ts.Name,
+			Namespace:  ts.Namespace,
+			MaxRetries: ts.MaxRetries,
+			Setup:      ts.Setup,
+			Teardown:   ts.Teardown,
+			Tests:      make(map[string]model.TestFunc),
 		}
 
 		for _, t := range ts.Tests {

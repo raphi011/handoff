@@ -9,64 +9,64 @@ import (
 )
 
 type TestFinishedListener interface {
-	Plugin
+	Hook
 	TestFinished(suite model.TestSuite, run model.TestSuiteRun, testName string, context model.TestContext)
 }
 
 type AsyncTestFinishedListener interface {
-	Plugin
-	TestFinishedAsync(suite model.TestSuite, run model.TestSuiteRun, testName string, context map[string]any, callback AsyncPluginCallback)
+	Hook
+	TestFinishedAsync(suite model.TestSuite, run model.TestSuiteRun, testName string, context map[string]any, callback AsyncHookCallback)
 }
 
 type TestSuiteFinishedListener interface {
-	Plugin
+	Hook
 	TestSuiteFinished(suite model.TestSuite, run model.TestSuiteRun)
 }
 
 type AsyncTestSuiteFinishedListener interface {
-	Plugin
-	TestSuiteFinishedAsync(suite model.TestSuite, run model.TestSuiteRun, callback AsyncPluginCallback)
+	Hook
+	TestSuiteFinishedAsync(suite model.TestSuite, run model.TestSuiteRun, callback AsyncHookCallback)
 }
 
-// AsyncPluginCallback allows async plugin handlers to add additional context
+// AsyncHookCallback allows async hooks to add additional context
 // to a testsuite or testrun.
-type AsyncPluginCallback func(context map[string]any)
+type AsyncHookCallback func(context map[string]any)
 
-type Plugin interface {
+type Hook interface {
 	Name() string
 	Init() error
 }
 
-type pluginManager struct {
-	all                    []Plugin
+type hookManager struct {
+	all                    []Hook
 	testFinished           []TestFinishedListener
 	testFinishedAsync      []AsyncTestFinishedListener
 	testSuiteFinished      []TestSuiteFinishedListener
 	testSuiteFinishedAsync []AsyncTestSuiteFinishedListener
 
-	asyncCallback asyncPluginCallback
+	asyncCallback asyncHookCallback
 
 	asyncHooksRunning sync.WaitGroup
 }
 
-type asyncPluginCallback func(p Plugin, context map[string]any)
+type asyncHookCallback func(p Hook, context map[string]any)
 
-func newPluginManager(pluginCallback asyncPluginCallback) *pluginManager {
-	return &pluginManager{
-		all:                    []Plugin{},
+func newHookManager(hookCallback asyncHookCallback) *hookManager {
+	return &hookManager{
+		all:                    []Hook{},
 		testFinished:           []TestFinishedListener{},
 		testFinishedAsync:      []AsyncTestFinishedListener{},
 		testSuiteFinished:      []TestSuiteFinishedListener{},
 		testSuiteFinishedAsync: []AsyncTestSuiteFinishedListener{},
 
-		asyncCallback: pluginCallback,
+		asyncCallback: hookCallback,
 	}
 }
 
-func (s *pluginManager) init() error {
+func (s *hookManager) init() error {
 	for _, p := range s.all {
 		if err := p.Init(); err != nil {
-			return fmt.Errorf("initiating plugin %q: %w", p.Name(), err)
+			return fmt.Errorf("initiating hook %q: %w", p.Name(), err)
 		}
 
 		registeredHook := false
@@ -81,14 +81,14 @@ func (s *pluginManager) init() error {
 		}
 
 		if !registeredHook {
-			return fmt.Errorf("plugin %q does not implement any hook", p.Name())
+			return fmt.Errorf("hook %q does not implement any listener", p.Name())
 		}
 	}
 
 	return nil
 }
 
-func (s *pluginManager) shutdown() context.Context {
+func (s *hookManager) shutdown() context.Context {
 	cancelCtx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -99,13 +99,13 @@ func (s *pluginManager) shutdown() context.Context {
 	return cancelCtx
 }
 
-func (s *pluginManager) notifyTestSuiteFinished(suite model.TestSuite, testSuiteRun model.TestSuiteRun) {
+func (s *hookManager) notifyTestSuiteFinished(suite model.TestSuite, testSuiteRun model.TestSuiteRun) {
 	for _, p := range s.testSuiteFinished {
 		p.TestSuiteFinished(suite, testSuiteRun)
 	}
 }
 
-func (s *pluginManager) notifyTestSuiteFinishedAsync(suite model.TestSuite, testSuiteRun model.TestSuiteRun) {
+func (s *hookManager) notifyTestSuiteFinishedAsync(suite model.TestSuite, testSuiteRun model.TestSuiteRun) {
 	for _, p := range s.testSuiteFinishedAsync {
 		s.asyncHooksRunning.Add(1)
 
@@ -113,18 +113,18 @@ func (s *pluginManager) notifyTestSuiteFinishedAsync(suite model.TestSuite, test
 		go func() {
 			// TODO catch panics
 			defer s.asyncHooksRunning.Done()
-			hook.TestSuiteFinishedAsync(suite, testSuiteRun, s.newAsyncPluginCallback(hook))
+			hook.TestSuiteFinishedAsync(suite, testSuiteRun, s.newAsyncHookCallback(hook))
 		}()
 	}
 }
 
-func (s *pluginManager) notifyTestFinished(suite model.TestSuite, testRun model.TestSuiteRun, name string, runContext model.TestContext) {
+func (s *hookManager) notifyTestFinished(suite model.TestSuite, testRun model.TestSuiteRun, name string, runContext model.TestContext) {
 	for _, p := range s.testFinished {
 		p.TestFinished(suite, testRun, name, runContext)
 	}
 }
 
-func (s *pluginManager) notifyTestFinishedAync(suite model.TestSuite, testRun model.TestSuiteRun, name string, runContext map[string]any) {
+func (s *hookManager) notifyTestFinishedAync(suite model.TestSuite, testRun model.TestSuiteRun, name string, runContext map[string]any) {
 	for _, p := range s.testFinishedAsync {
 		s.asyncHooksRunning.Add(1)
 
@@ -132,12 +132,12 @@ func (s *pluginManager) notifyTestFinishedAync(suite model.TestSuite, testRun mo
 		go func() {
 			// TODO catch panics
 			defer s.asyncHooksRunning.Done()
-			hook.TestFinishedAsync(suite, testRun, name, runContext, s.newAsyncPluginCallback(hook))
+			hook.TestFinishedAsync(suite, testRun, name, runContext, s.newAsyncHookCallback(hook))
 		}()
 	}
 }
 
-func (s *pluginManager) newAsyncPluginCallback(p Plugin) AsyncPluginCallback {
+func (s *hookManager) newAsyncHookCallback(p Hook) AsyncHookCallback {
 	return func(c map[string]any) {
 		s.asyncCallback(p, c)
 	}

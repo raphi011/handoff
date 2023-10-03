@@ -4,6 +4,7 @@
 package model
 
 import (
+	"fmt"
 	"regexp"
 	"time"
 )
@@ -15,15 +16,13 @@ type TestSuiteRun struct {
 	SuiteName string
 	// Result is the outcome of the entire test suite run.
 	Result Result
-	// TestFilter filters out a subset of the tests and skips the
-	// remaining ones (not implemented yet).
-	TestFilter      string
-	TestFilterRegex *regexp.Regexp
-	// Reference can be set when starting a new test suite run to identify
-	// a test run by a user provided value.
-	Reference string
 	// Tests counts the total amount of tests in the suite.
 	Tests int
+	// Flaky is set to true if one or more tests only succeed
+	// after being retried.
+	Flaky bool
+	// Params passed in to a run.
+	Params RunParams
 	// Scheduled is the time when the test was triggered, e.g.
 	// through a http call.
 	Scheduled time.Time
@@ -35,12 +34,28 @@ type TestSuiteRun struct {
 	DurationInMS int64
 	// SetupLogs are the logs that are written during the setup phase.
 	SetupLogs string
-	// TriggeredBy denotes the origin of the test run, e.g. scheduled or via http call.
-	TriggeredBy string
 	// Environment is additional information on where the tests are run (e.g. cluster name).
 	Environment string
 	// TestResults contains the detailed test results of each test.
-	TestResults []TestRun
+	TestResults []*TestRun
+}
+
+func (t TestSuiteRun) ShouldRetry(tr TestRun) bool {
+	return tr.Result == ResultFailed && tr.Attempt < t.Params.MaxRetries
+}
+
+type RunParams struct {
+	// TriggeredBy denotes the origin of the test run, e.g. scheduled or via http call.
+	TriggeredBy string
+	// Reference can be set when starting a new test suite run to identify
+	// a test run by a user provided value.
+	Reference  string
+	MaxRetries int
+	Timeout    time.Duration
+	// TestFilter filters out a subset of the tests and skips the
+	// remaining ones (not implemented yet).
+	TestFilter      string
+	TestFilterRegex *regexp.Regexp
 }
 
 func (tsr TestSuiteRun) ResultFromTestResults() Result {
@@ -59,25 +74,47 @@ func (tsr TestSuiteRun) ResultFromTestResults() Result {
 	return result
 }
 
-func (tsr TestSuiteRun) LatestTestAttempt(testName string) *TestRun {
-	testResult := &TestRun{}
-	for i := range tsr.TestResults {
-		t := &tsr.TestResults[i]
-		if t.Name == testName && t.Attempt > testResult.Attempt {
-			testResult = t
+// func (tsr TestSuiteRun) LatestTestAttempt(testName string) *TestRun {
+// 	testResult := &TestRun{}
+// 	for i := range tsr.TestResults {
+// 		t := &tsr.TestResults[i]
+// 		if t.Name == testName && t.Attempt > testResult.Attempt {
+// 			testResult = t
+// 		}
+// 	}
+
+// 	return testResult
+// }
+
+func (tsr TestSuiteRun) IsFlaky() bool {
+	for _, r := range tsr.TestResults {
+		if r.Attempt > 1 {
+			return true
 		}
 	}
 
-	return testResult
+	return false
+}
+
+func (tsr TestSuiteRun) PendingTests() []*TestRun {
+	pendingRuns := []*TestRun{}
+
+	for _, tr := range tsr.TestResults {
+		if tr.Result == ResultPending {
+			pendingRuns = append(pendingRuns, tr)
+		}
+	}
+
+	return pendingRuns
 }
 
 func (tsr TestSuiteRun) TestSuiteDuration() int64 {
 	duration := int64(0)
 
-	attempts := map[string]TestRun{}
+	attempts := map[string]*TestRun{}
 
 	for _, r := range tsr.TestResults {
-		if attempts[r.Name].Attempt < r.Attempt {
+		if a, ok := attempts[r.Name]; !ok || a.Attempt < r.Attempt {
 			attempts[r.Name] = r
 		}
 	}
@@ -114,6 +151,16 @@ type TestRun struct {
 	Context TestContext `json:"context"`
 }
 
+func (t TestRun) NewAttempt() TestRun {
+	return TestRun{
+		SuiteName:  t.SuiteName,
+		SuiteRunID: t.SuiteRunID,
+		Name:       t.Name,
+		Result:     ResultPending,
+		Attempt:    t.Attempt + 1,
+	}
+}
+
 type Result string
 
 const (
@@ -138,7 +185,7 @@ type TestSuite struct {
 	// Name of the testsuite
 	Name string `json:"name"`
 	// TestRetries is the amount of times a test is retried when failing.
-	TestRetries int
+	MaxRetries int
 	// Namespace allows grouping of test suites, e.g. by team name.
 	Namespace string
 	Setup     func() error
@@ -146,20 +193,58 @@ type TestSuite struct {
 	Tests     map[string]TestFunc
 }
 
-func (t TestSuite) FilterTests(filter *regexp.Regexp) map[string]TestFunc {
-	if filter == nil {
-		return t.Tests
+func (t TestSuite) SafeTeardown() error {
+	if t.Teardown == nil {
+		return nil
 	}
 
-	filteredtests := map[string]TestFunc{}
+	var err error
 
-	for testName, testFunc := range t.Tests {
-		if filter.MatchString(testName) {
-			filteredtests[testName] = testFunc
+	defer func() {
+		r := recover()
+
+		if r != nil {
+			err = fmt.Errorf("%v", err)
 		}
+	}()
+
+	err = t.Teardown()
+
+	return err
+}
+
+func (t TestSuite) SafeSetup() error {
+	if t.Setup == nil {
+		return nil
 	}
 
-	return filteredtests
+	var err error
+
+	defer func() {
+		r := recover()
+
+		if r != nil {
+			err = fmt.Errorf("%v", err)
+		}
+	}()
+
+	// TODO: allow setup to add values to the runtime context?
+	err = t.Setup()
+
+	return err
+}
+
+func (t TestSuite) FilterTests(filter *regexp.Regexp) []string {
+	tests := []string{}
+
+	for testName := range t.Tests {
+		if filter != nil && !filter.MatchString(testName) {
+			continue
+		}
+		tests = append(tests, testName)
+	}
+
+	return tests
 }
 
 // TB is a carbon copy of the stdlib testing.TB interface + some custom handoff functions. Unfortunately we cannot reuse

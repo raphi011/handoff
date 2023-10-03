@@ -1,13 +1,13 @@
 package main
 
 import (
+	"log"
 	"log/slog"
 	"math/rand"
 	"os"
 	"time"
 
 	"github.com/raphi011/handoff"
-	"github.com/raphi011/handoff/plugin"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -27,7 +27,8 @@ func main() {
 			},
 		}),
 		handoff.WithTestSuite(handoff.TestSuite{
-			Name: "my-app",
+			Name:       "my-app",
+			MaxRetries: 3,
 			Tests: []handoff.TestFunc{
 				Flaky,
 				Sleep,
@@ -36,10 +37,10 @@ func main() {
 				Skip,
 				Fatal,
 				Testify,
+				LoggingTest,
 			},
 		}),
 		handoff.WithScheduledRun(handoff.ScheduledRun{TestSuiteName: "my-app", Schedule: "@every 5s"}),
-		handoff.WithPlugin(&plugin.ElasticSearchPlugin{}),
 	)
 
 	if err := h.Run(); err != nil {
@@ -60,6 +61,11 @@ func SoftFailure(t handoff.TB) {
 	t.SoftFailure()
 
 	t.Fail()
+}
+
+func LoggingTest(t handoff.TB) {
+	log.Println("This should not show up in the server logs")
+	slog.Info("And this shouldn't either")
 }
 
 func Flaky(t handoff.TB) {
