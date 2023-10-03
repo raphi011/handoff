@@ -12,6 +12,9 @@ type TestSuiteRunHTTP struct {
 	// TestFilter filters out a subset of the tests and skips the
 	// remaining ones (not implemented yet).
 	TestFilter string `json:"testFilter"`
+	// Reference can be set when starting a new test suite run to identify
+	// a test run by a user provided value.
+	Reference string `json:"reference"`
 	// Tests counts the total amount of tests in the suite.
 	Tests int `json:"tests"`
 	// Scheduled is the time when the test was triggered, e.g.

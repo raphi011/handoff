@@ -5,6 +5,7 @@ CREATE TABLE TestSuiteRun(
     environment TEXT NOT NULL,
     result TEXT NOT NULL,
     testFilter TEXT NOT NULL,
+    reference TEXT NOT NULL,
 
     scheduledTime TEXT NOT NULL,
     startTime TEXT NOT NULL,
@@ -18,6 +19,7 @@ CREATE TABLE TestSuiteRun(
 ) STRICT;
 
 CREATE INDEX TsrName ON TestSuiteRun(suiteName);
+CREATE INDEX TsrReference ON TestSuiteRun(reference);
 
 CREATE TABLE TestRun(
     suiteName TEXT NOT NULL,
