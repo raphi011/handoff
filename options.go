@@ -7,12 +7,6 @@ func WithScheduledRun(sr ScheduledRun) option {
 	}
 }
 
-func WithTestSuiteFiles(files []string) option {
-	return func(s *Server) {
-		s.config.TestSuiteLibraryFiles = files
-	}
-}
-
 func WithHook(p Hook) option {
 	return func(s *Server) {
 		s.hooks.all = append(s.hooks.all, p)

@@ -72,7 +72,7 @@ func acceptanceTest() *test {
 	// save go test args
 	args := os.Args
 	// random port and in-memory database
-	os.Args = []string{"handoff-test", "-p", "0", "-d", "", "-t", "./testdata/exampleplugin"}
+	os.Args = []string{"handoff-test", "-p", "0", "-d", ""}
 
 	h := handoff.New(
 		handoff.WithTestSuite(handoff.TestSuite{

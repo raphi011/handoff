@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"plugin"
 	"reflect"
 	"regexp"
 	"runtime"
@@ -75,10 +74,6 @@ type config struct {
 	// location of the sqlite database file, if empty we default
 	// to an in-memory database.
 	DatabaseFilePath string `arg:"-d,--database,env:HANDOFF_DATABASE" help:"database file location" default:"handoff.db"`
-
-	// TestSuiteLibraryFiles is a list of library files that will load
-	// additional test suites and scheduled runs.
-	TestSuiteLibraryFiles []string `arg:"-t,--testsuite,separate,env:HANDOFF_TESTSUITE_FILE" help:"optional list of test suite library files"`
 
 	// List will, if set to true, print all loaded test suites
 	// and immediately exit.
@@ -149,10 +144,6 @@ func (s *Server) Run() error {
 
 	arg.MustParse(&s.config)
 
-	if err := s.loadLibraryFiles(); err != nil {
-		return fmt.Errorf("loading test library files: %w", err)
-	}
-
 	if err := s.mapTestSuites(); err != nil {
 		return err
 	}
@@ -211,32 +202,6 @@ func (s *Server) WaitForStartup() {
 func (s *Server) Shutdown() {
 	s.exit <- os.Interrupt
 	<-s.shutdown
-}
-
-func (s *Server) loadLibraryFiles() error {
-	for _, f := range s.config.TestSuiteLibraryFiles {
-		p, err := plugin.Open(f)
-		if err != nil {
-			return fmt.Errorf("opening test suite file: %w", err)
-		}
-
-		handoffSymbol, err := p.Lookup("Handoff")
-		if err != nil {
-			return fmt.Errorf("invalid test suite file: %w", err)
-		}
-
-		handoffFunc, ok := handoffSymbol.(func() ([]TestSuite, []ScheduledRun))
-		if !ok {
-			return errors.New("invalid test suite plugin, expected signature `func TestSuites() []TestSuite``")
-		}
-
-		suites, schedules := handoffFunc()
-
-		s._userProvidedTestSuites = append(s._userProvidedTestSuites, suites...)
-		s.schedules = append(s.schedules, schedules...)
-	}
-
-	return nil
 }
 
 func (s *Server) resumePendingTestRuns() {

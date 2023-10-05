@@ -2,7 +2,6 @@ package handoff_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/raphi011/handoff/internal/model"
 	"github.com/stretchr/testify/assert"
@@ -85,22 +84,4 @@ func TestSuiteWithPanicingSetupSkipsTestsAndFails(t *testing.T) {
 	assert.Equal(t, 1, tr.Attempt, "expected 1 test run attempt")
 	assert.Equal(t, model.ResultSkipped, tr.Result, "expected test run to have been skipped")
 	assert.Equal(t, "test suite run setup failed: skipped", tr.Logs, "expected test run to contain setup failed log")
-}
-
-func TestScheduledRunIsCreated(t *testing.T) {
-	t.Parallel()
-
-	suiteName := "plugin-scheduled-test"
-
-	te.waitForTestSuiteRunWithResult(t, 5*time.Second, suiteName, 1, model.ResultPassed)
-}
-
-func TestRunSuiteFromLibraryFile(t *testing.T) {
-	t.Parallel()
-
-	suiteName := "plugin-test"
-
-	tsr := te.createNewTestSuiteRun(t, suiteName)
-
-	te.waitForTestSuiteRunWithResult(t, defaultTimeout, suiteName, tsr.ID, model.ResultPassed)
 }
