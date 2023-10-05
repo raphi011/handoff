@@ -95,3 +95,12 @@ func TestScheduledRunIsCreated(t *testing.T) {
 	te.waitForTestSuiteRunWithResult(t, 5*time.Second, suiteName, 1, model.ResultPassed)
 }
 
+func TestRunSuiteFromLibraryFile(t *testing.T) {
+	t.Parallel()
+
+	suiteName := "plugin-test"
+
+	tsr := te.createNewTestSuiteRun(t, suiteName)
+
+	te.waitForTestSuiteRunWithResult(t, defaultTimeout, suiteName, tsr.ID, model.ResultPassed)
+}

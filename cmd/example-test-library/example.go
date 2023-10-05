@@ -13,8 +13,14 @@ func Handoff() ([]handoff.TestSuite, []handoff.ScheduledRun) {
 					PluginTestSuccess,
 				},
 			},
+			{
+				Name: "plugin-scheduled-test",
+				Tests: []handoff.TestFunc{
+					PluginTestSuccess,
+				},
+			},
 		}, []handoff.ScheduledRun{{
-			TestSuiteName: "plugin-test", Schedule: "@every 5s"},
+			TestSuiteName: "plugin-scheduled-test", Schedule: "@every 2s"},
 		}
 }
 
