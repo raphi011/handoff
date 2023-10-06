@@ -4,29 +4,40 @@ Handoff is a library that allows you to bootstrap a server that runs scheduled a
 
 ## Example
 
-There are several ways to setup a handoff server: 
+Bootstrapping a server is simple, all you need to do is run this code:
 
-1. Build the `./cmd/handoff` binary and your custom test suite libraries (see `./cmd/example-test-library`) and pass in the libraries via the commandline:
+```go
+package main
 
-```sh
-go install github.com/raphi011/handoff/cmd/handoff
-go build -buildmode plugin -o example-test-library ./cmd/example-test-library
-handoff -t ./example-test-library
+func main() {
+	h := handoff.New()
+    h.Run()
+}
 ```
 
-A test suite library needs to include a public function with signature `func Handoff() ([]handoff.TestSuite, []handoff.ScheduledRun)`.
+To pass in test suites and scheduled runs you can do that by passing in `handoff.WithTestSuite` and `handoff.WithScheduledRun` options to `handoff.New()`.
 
-2. Bootstrap a handoff server yourself by importing the library (see `./cmd/example-server-bootstrap`) and calling `handoff.New().Run()` with tests 
-defined in the same repository and passed in via the `handoff.WithTestSuite()` option.
+Another way is to register them via `handoff.Register` before calling `handoff.New()`. This is especially convenient when you want to have your tests in the same repository as the system under test (SUT), which means they would be in a different repository (unless you have a monorepo). In this case the test package could register the tests in an init function like so:
 
-3. Bootstrap a handoff server and import `TestSuite`s from external packages. This is a handy approach if multiple teams use the same server to run their tests as the tests can live in separate codebases.
+```go
+func init() {
+    handoff.Register(ts, scheduledRuns)
+}
+```
 
-4. A combination of 2 & 3.
+and then all the handoff server needs to do is import the test package with a blank identifier:
+
+```go
+import _ "github.com/my-org/my-service/tests"
+```
+
+For examples see [./cmd/example-server-bootstrap/main.go] and [./internal/packagetestexample].
 
 ## Test best practices
 
 * Pass in the test context for longer running operations and check if it was cancelled.
 * Only log messages via t.Log/t.Logf as other log messages will not show up in the test logs.
+* Make sure that code in `setup` is idempotent as it can run more than once.
 
 ## Planned features
 
@@ -35,6 +46,7 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 - [ ] (Feature) Configurable test run retention policy
 - [ ] (Feature) Flaky test detection + metric
 - [ ] (Feature) Add test-suite labels
+- [ ] (Feature) Test suite namespaces
 - [ ] (Feature) Asynchronous plugin hooks with callbacks for slow operations (e.g. http calls)
 - [ ] (Technical) Comprehensive test suite
 - [ ] (Plugin) Pagerduty - triger alerts/incidents on failed e2e tests
@@ -44,7 +56,7 @@ defined in the same repository and passed in via the `handoff.WithTestSuite()` o
 - [x] (Technical) Server configuration through either ENV vars or cli flags
 - [x] (Technical) Continue test runs on service restart
 - [x] (Technical) Graceful server shutdown
-- [x] (Technical) Loading of `TestSuite`s via shared libraries.
+- [x] (Technical) Registering of `TestSuite`s and `ScheduledRun`s via imported packages
 - [x] (Technical) SQLite Persistence layer
 - [x] (Feature) Persist compressed test logs to save space
 - [x] (Feature) Soft test fails that don't fail the entire testsuite. This can be used to help with the chicken/egg problem when you add new tests that target a new service version that is not deployed yet.

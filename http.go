@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"regexp"
 	"strconv"
 	"strings"
@@ -32,6 +33,10 @@ func (s *Server) runHTTP() error {
 
 	router.Handler("GET", "/metrics", promhttp.Handler())
 
+	if s.config.EnablePprof {
+		router.Handler(http.MethodGet, "/debug/pprof/*item", http.DefaultServeMux)
+	}
+
 	router.GET("/healthz", s.getHealth)
 	router.GET("/ready", s.getReady)
 
@@ -44,6 +49,9 @@ func (s *Server) runHTTP() error {
 	s.httpServer = &http.Server{
 		Handler: router,
 		// TODO: set reasonable timeouts
+
+		// needed for debug/pprof/profile endpoint
+		WriteTimeout: 31 * time.Second,
 	}
 
 	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", s.config.HostIP, s.config.Port))
@@ -69,22 +77,19 @@ func (s *Server) runHTTP() error {
 	return nil
 }
 
-func (s *Server) stopHTTP() context.Context {
-	httpStopCtx, cancelHttp := context.WithCancel(context.Background())
+func (s *Server) stopHTTP() chan error {
+	httpStopped := make(chan error)
 
 	go func() {
 		timeoutCtx, cancelTimeout := context.WithTimeout(context.Background(), time.Second*30)
 		defer cancelTimeout()
-		defer cancelHttp()
 
 		err := s.httpServer.Shutdown(timeoutCtx)
 
-		if err != nil {
-			s.log.Warn("Http listener shutdown returned an error", "error", err)
-		}
+		httpStopped <- err
 	}()
 
-	return httpStopCtx
+	return httpStopped
 }
 
 func (s *Server) startTestSuite(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -111,10 +116,9 @@ func (s *Server) startTestSuite(w http.ResponseWriter, r *http.Request, p httpro
 	}
 
 	tsr, err := s.startNewTestSuiteRun(suite, model.RunParams{
-		TriggeredBy:     "api",
-		TestFilterRegex: filterRegex,
-		TestFilter:      filter,
-		Reference:       reference,
+		TriggeredBy: "api",
+		TestFilter:  filterRegex,
+		Reference:   reference,
 	})
 	if err != nil {
 		s.httpError(w, err)
@@ -146,7 +150,7 @@ func (s *Server) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p httpr
 }
 
 func (s *Server) getTestRunResult(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	testRun, err := s.loadTestRun(r.Context(), r, p)
+	testRun, err := s.loadTestRuns(r.Context(), r, p)
 	if err != nil {
 		s.httpError(w, err)
 		return
@@ -227,25 +231,17 @@ func (s *Server) loadTestSuite(r *http.Request, p httprouter.Params) (model.Test
 	return ts, nil
 }
 
-func (s *Server) loadTestRun(ctx context.Context, r *http.Request, p httprouter.Params) (model.TestRun, error) {
+func (s *Server) loadTestRuns(ctx context.Context, r *http.Request, p httprouter.Params) ([]model.TestRun, error) {
 	suiteName := p.ByName("suite-name")
 	testName := p.ByName("test-name")
 	runID, err := strconv.Atoi(p.ByName("run-id"))
 	if err != nil {
-		return model.TestRun{}, malformedRequestError{param: "run-id", reason: "must be an integer"}
+		return []model.TestRun{}, malformedRequestError{param: "run-id", reason: "must be an integer"}
 	}
 
-	// if len(r.URL.Query["attempt"]) != 1 {
-
-	// }
-	// attempt, err := strconv.Atoi(
-	// if err != nil {
-	// 	return model.TestRun{}, malformedRequestError{param: "run-id", reason: "must be an integer"}
-	// }
-
-	tr, err := s.storage.LoadTestRun(ctx, suiteName, runID, testName, 1 /* todo */)
+	tr, err := s.storage.LoadTestRun(ctx, suiteName, runID, testName)
 	if err != nil {
-		return model.TestRun{}, err
+		return []model.TestRun{}, err
 	}
 
 	return tr, nil

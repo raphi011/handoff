@@ -13,8 +13,7 @@ type ScheduledRun struct {
 	// https://pkg.go.dev/github.com/robfig/cron#hdr-CRON_Expression_Format
 	Schedule string
 	// TestFilter allows enabling/filtering only certain tests of a testsuite to be run
-	TestFilter string
-	testFilter *regexp.Regexp
+	TestFilter *regexp.Regexp
 
 	// EntryID identifies the cronjob
 	EntryID cron.EntryID

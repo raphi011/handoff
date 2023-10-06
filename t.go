@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/raphi011/handoff/internal/model"
 )
@@ -14,6 +15,7 @@ var _ model.TB = &T{}
 type T struct {
 	suiteName      string
 	testName       string
+	attempt        int
 	logs           strings.Builder
 	result         model.Result
 	runtimeContext model.TestContext
@@ -111,6 +113,10 @@ func (t *T) SoftFailure() {
 	t.softFailure = true
 }
 
+func (t *T) Attempt() int {
+	return t.attempt
+}
+
 func (t *T) Value(key string) any {
 	return t.runtimeContext[key]
 }
@@ -125,6 +131,10 @@ func (t *T) Result() model.Result {
 	}
 
 	return t.result
+}
+
+func (t *T) SetTimeout(timeout time.Duration) {
+	// TODO
 }
 
 func (t *T) runTestCleanup() error {

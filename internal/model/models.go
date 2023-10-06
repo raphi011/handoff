@@ -6,38 +6,39 @@ package model
 import (
 	"fmt"
 	"regexp"
+	"sync"
 	"time"
 )
 
 type TestSuiteRun struct {
 	// ID is the identifier of the test run.
-	ID int
+	ID int `json:"id"`
 	// SuiteName is the name of the test suite that is run.
-	SuiteName string
+	SuiteName string `json:"suiteName"`
 	// Result is the outcome of the entire test suite run.
-	Result Result
+	Result Result `json:"result"`
 	// Tests counts the total amount of tests in the suite.
-	Tests int
+	Tests int `json:"tests"`
 	// Flaky is set to true if one or more tests only succeed
 	// after being retried.
-	Flaky bool
+	Flaky bool `json:"flaky"`
 	// Params passed in to a run.
-	Params RunParams
+	Params RunParams `json:"params"`
 	// Scheduled is the time when the test was triggered, e.g.
 	// through a http call.
-	Scheduled time.Time
+	Scheduled time.Time `json:"scheduled"`
 	// Start is the time when the test run first started executing.
-	Start time.Time
+	Start time.Time `json:"start"`
 	// End is the time when the test run finished executing.
-	End time.Time
+	End time.Time `json:"end"`
 	// DurationInMS is the test run execution times summed up.
-	DurationInMS int64
+	DurationInMS int64 `json:"durationInMs"`
 	// SetupLogs are the logs that are written during the setup phase.
-	SetupLogs string
+	SetupLogs string `json:"setupLogs"`
 	// Environment is additional information on where the tests are run (e.g. cluster name).
-	Environment string
+	Environment string `json:"environment"`
 	// TestResults contains the detailed test results of each test.
-	TestResults []*TestRun
+	TestResults []*TestRun `json:"testResults"`
 }
 
 func (t TestSuiteRun) ShouldRetry(tr TestRun) bool {
@@ -52,10 +53,8 @@ type RunParams struct {
 	Reference       string
 	MaxTestAttempts int
 	Timeout         time.Duration
-	// TestFilter filters out a subset of the tests and skips the
-	// remaining ones (not implemented yet).
-	TestFilter      string
-	TestFilterRegex *regexp.Regexp
+	// TestFilter filters out a subset of the tests and skips the remaining ones.
+	TestFilter *regexp.Regexp
 }
 
 func (tsr TestSuiteRun) ResultFromTestResults() Result {
@@ -188,6 +187,7 @@ type TestSuite struct {
 	Setup     func() error
 	Teardown  func() error
 	Tests     map[string]TestFunc
+	lock      *sync.Mutex
 }
 
 func (t TestSuite) SafeTeardown() (err error) {
@@ -264,4 +264,5 @@ type TB interface {
 
 	/* Handoff specific */
 	SoftFailure()
+	Attempt() int
 }

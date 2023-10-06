@@ -11,10 +11,10 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -48,7 +48,7 @@ type Server struct {
 	// started will be closed when the service has started.
 	started chan any
 	// shutdown will be closed when the service has shut down.
-	shutdown chan any
+	shutdown chan error
 
 	// exit receives os signals
 	exit chan os.Signal
@@ -60,9 +60,11 @@ type Server struct {
 
 	httpServer *http.Server
 
+	suiteID atomic.Uint64
+
 	log *slog.Logger
 
-	storage *storage.Storage
+	storage storage.Storage
 }
 
 type config struct {
@@ -70,6 +72,8 @@ type config struct {
 
 	// Port for the web api
 	Port int `arg:"-p,env:HANDOFF_PORT" help:"port used by the server (server mode only)" default:"1337"`
+
+	EnablePprof bool `arg:"--enable-pprof" help:"enable pprof debugging endpoints" default:"false"`
 
 	// location of the sqlite database file, if empty we default
 	// to an in-memory database.
@@ -111,16 +115,29 @@ type TestFunc = model.TestFunc
 type TB = model.TB
 type TestContext = model.TestContext
 
-type option func(s *Server)
+type Option func(s *Server)
+
+var (
+	registeredSuites    []TestSuite
+	registeredSchedules []ScheduledRun
+)
+
+// Register registers test suites and schedules to be loaded when `*server.New()` is called.
+func Register(suites []TestSuite, schedules []ScheduledRun) {
+	registeredSuites = append(registeredSuites, suites...)
+	registeredSchedules = append(registeredSchedules, schedules...)
+}
 
 // New configures a new Handoff instance.
-func New(opts ...option) *Server {
+func New(opts ...Option) *Server {
 	s := &Server{
-		readOnlyTestSuites: map[string]model.TestSuite{},
-		started:            make(chan any),
-		exit:               make(chan os.Signal, 1),
-		shutdown:           make(chan any),
-		log:                slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		_userProvidedTestSuites: registeredSuites,
+		schedules:               registeredSchedules,
+		readOnlyTestSuites:      map[string]model.TestSuite{},
+		started:                 make(chan any),
+		exit:                    make(chan os.Signal, 1),
+		shutdown:                make(chan error, 1),
+		log:                     slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
 
 	s.hooks = newHookManager(s.asyncHookCallback)
@@ -141,6 +158,7 @@ func (s *Server) Run() error {
 	// the standard test loggers to /dev/null and use a custom one
 	// for the server.
 	stdliblog.SetOutput(io.Discard)
+	defer stdliblog.SetOutput(os.Stderr)
 
 	arg.MustParse(&s.config)
 
@@ -158,7 +176,7 @@ func (s *Server) Run() error {
 
 	signal.Notify(s.exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	db, err := storage.New(s.config.DatabaseFilePath, s.log)
+	db, err := storage.NewSqlite(s.config.DatabaseFilePath, s.log)
 	if err != nil {
 		return fmt.Errorf("init storage: %w", err)
 	}
@@ -180,9 +198,6 @@ func (s *Server) Run() error {
 
 	s.gracefulShutdown(signal)
 
-	// restore logger
-	stdliblog.SetOutput(os.Stderr)
-
 	return nil
 }
 
@@ -199,9 +214,9 @@ func (s *Server) WaitForStartup() {
 }
 
 // Shutdown shuts down the server and blocks until it is finished.
-func (s *Server) Shutdown() {
+func (s *Server) Shutdown() error {
 	s.exit <- os.Interrupt
-	<-s.shutdown
+	return <-s.shutdown
 }
 
 func (s *Server) resumePendingTestRuns() {
@@ -244,10 +259,10 @@ func (s *Server) gracefulShutdown(signal os.Signal) {
 
 	s.shuttingDown = true
 
-	httpStopCtx := s.stopHTTP()
+	httpStopped := s.stopHTTP()
 	cronStopCtx := s.cron.Stop()
 
-	<-httpStopCtx.Done()
+	httpErr := <-httpStopped
 	s.log.Info("Http listener stopped")
 	<-cronStopCtx.Done()
 	s.log.Info("Scheduled tests stopped")
@@ -257,16 +272,15 @@ func (s *Server) gracefulShutdown(signal os.Signal) {
 	s.log.Info("Plugins stopped")
 
 	s.runningTestSuites.Wait()
+	s.log.Info("Running test suites finished")
 
-	if err := s.storage.Close(); err != nil {
-		s.log.Warn("Closing DB connection failed", "error", err)
-		return
-	}
+	dbErr := s.storage.Close()
+	s.log.Info("DB closed")
 
+	err := errors.Join(httpErr, dbErr)
+
+	s.shutdown <- err
 	close(s.shutdown)
-
-	s.log.Info("DB connection closed")
-	s.log.Info("Shutdown successful")
 }
 
 func (s *Server) printTestSuites() {
@@ -295,27 +309,18 @@ func (s *Server) startSchedules() error {
 	for i := range s.schedules {
 		schedule := s.schedules[i]
 
-		if schedule.TestFilter != "" {
-			var err error
-			schedule.testFilter, err = regexp.Compile(schedule.TestFilter)
-			if err != nil {
-				return fmt.Errorf("invalid filter regex %s: %w", schedule.TestFilter, err)
-			}
-		}
-
 		ts, ok := s.readOnlyTestSuites[schedule.TestSuiteName]
 		if !ok {
 			return fmt.Errorf("test suite %q not found", schedule.TestSuiteName)
 		}
 
-		if len(ts.FilterTests(schedule.testFilter)) == 0 {
+		if len(ts.FilterTests(schedule.TestFilter)) == 0 {
 			return errors.New("no tests match filter regex %s")
 		}
 
 		entryID, err := s.cron.AddFunc(schedule.Schedule, func() {
 			_, err := s.startNewTestSuiteRun(ts, model.RunParams{
 				TriggeredBy:     "scheduled",
-				TestFilterRegex: schedule.testFilter,
 				TestFilter:      schedule.TestFilter,
 				MaxTestAttempts: ts.MaxTestAttempts,
 			})
@@ -348,7 +353,11 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 		option.MaxTestAttempts = ts.MaxTestAttempts
 	}
 
+	suiteID := s.suiteID.Add(1)
+
 	tsr := model.TestSuiteRun{
+		// TODO lock test suite and fetch latest id from storage.
+		ID:          int(suiteID),
 		SuiteName:   ts.Name,
 		TestResults: []*model.TestRun{},
 		Result:      model.ResultPending,
@@ -364,7 +373,7 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 	}
 	defer s.storage.RollbackTransaction(ctx)
 
-	tsr.ID, err = s.storage.SaveTestSuiteRun(ctx, tsr)
+	err = s.storage.InsertTestSuiteRun(ctx, tsr)
 	if err != nil {
 		return model.TestSuiteRun{}, fmt.Errorf("unable to persist new test suite run: %w", err)
 	}
@@ -372,7 +381,7 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 	for testName := range ts.Tests {
 		result := model.ResultPending
 
-		if tsr.Params.TestFilterRegex != nil && !tsr.Params.TestFilterRegex.MatchString(testName) {
+		if tsr.Params.TestFilter != nil && !tsr.Params.TestFilter.MatchString(testName) {
 			result = model.ResultSkipped
 		}
 
@@ -415,10 +424,10 @@ func (s *Server) runTestSuite(
 
 	log := s.log.With("suite-name", suite.Name, "run-id", tsr.ID)
 
+	ctx := context.Background()
+
 	s.runningTestSuites.Add(1)
 	defer s.runningTestSuites.Done()
-
-	ctx := context.Background()
 
 	timeNotSet := time.Time{}
 	if tsr.Start == timeNotSet {
@@ -466,16 +475,12 @@ func (s *Server) runTestSuite(
 	for i := 0; i < len(testsToRun); i++ {
 		tr := testsToRun[i]
 
-		if tr.Result != model.ResultPending {
-			continue
-		}
-
 		if s.shuttingDown {
 			// we will continue pending test runs on restart
 			continue
 		}
 
-		s.runTest(suite, &tsr, tr)
+		s.runTest(ctx, suite, &tsr, tr)
 
 		if tsr.ShouldRetry(*tr) {
 			newAttempt := tr.NewAttempt()
@@ -516,8 +521,9 @@ func (s *Server) runTestSuite(
 
 // runTest runs an individual test that is part of a test suite. This function must only be called
 // by `runTestSuite()`.
-func (s *Server) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRun, testRun *model.TestRun) {
+func (s *Server) runTest(ctx context.Context, suite model.TestSuite, testSuiteRun *model.TestSuiteRun, testRun *model.TestRun) {
 	t := T{
+		attempt:        testRun.Attempt,
 		suiteName:      suite.Name,
 		testName:       testRun.Name,
 		runtimeContext: map[string]any{},
@@ -554,7 +560,7 @@ func (s *Server) runTest(suite model.TestSuite, testSuiteRun *model.TestSuiteRun
 		testRun.Logs = logs.String()
 		testRun.Context = t.runtimeContext
 
-		if err := s.storage.UpdateTestRun(context.Background(), *testRun); err != nil {
+		if err := s.storage.UpdateTestRun(ctx, *testRun); err != nil {
 			s.log.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
 		}
 
@@ -574,6 +580,10 @@ func (s *Server) asyncHookCallback(p Hook, pluginContext map[string]any) {
 }
 
 func (h *Server) mapTestSuites() error {
+	if len(h._userProvidedTestSuites) == 0 {
+		return errors.New("no test suites provided")
+	}
+
 	for _, ts := range h._userProvidedTestSuites {
 		if ts.Name == "" {
 			return errors.New("test suite name is not set")
@@ -607,7 +617,19 @@ func (h *Server) mapTestSuites() error {
 func testName(tf TestFunc) string {
 	fullFuncName := runtime.FuncForPC(reflect.ValueOf(tf).Pointer()).Name()
 
-	funcNameIndex := strings.LastIndex(fullFuncName, ".") + 1
-	// strip the package name
-	return fullFuncName[funcNameIndex:]
+	fqfn := fullFuncName[strings.LastIndex(fullFuncName, "/")+1:]
+
+	parts := strings.Split(fqfn, ".")
+
+	var funcName string
+
+	if len(parts) == 2 {
+		// <package-name>.<func-name>
+		funcName = parts[1]
+	} else {
+		// <package-name>.<other-func>.<func-name>.funcX
+		funcName = parts[len(parts)-2]
+	}
+
+	return funcName
 }

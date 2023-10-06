@@ -13,23 +13,30 @@ import (
 	"github.com/raphi011/handoff"
 	"github.com/raphi011/handoff/client"
 	"github.com/raphi011/handoff/internal/model"
+	"github.com/stretchr/testify/assert"
+
+	_ "github.com/raphi011/handoff/internal/packagetestexample"
 )
 
-var te *test
+var te *instance
 
 const (
 	defaultTimeout = 3 * time.Second
 )
 
 func TestMain(m *testing.M) {
-	te = acceptanceTest()
+	args := os.Args
+
+	te = handoffInstance(defaultTestSuites, nil, []string{"handoff-test", "-p", "0", "-d", ""})
+
+	// restore test command args, as m.Run() requires them.
+	os.Args = args
 
 	code := m.Run()
 
 	te.h.Shutdown()
 
 	os.Exit(code)
-
 }
 
 func Fail(t handoff.TB) {
@@ -50,12 +57,17 @@ func SoftFail(t handoff.TB) {
 	t.Error("Soft fail error")
 }
 
-var hasRunBefore bool
+func Retry(x int) handoff.TestFunc {
+	return func(t handoff.TB) {
+		if t.Attempt() < x+1 {
+			t.Fatalf("This tests fails before the %d attempt", x)
+		}
+	}
+}
 
-func RetryOnce(t handoff.TB) {
-	if !hasRunBefore {
-		hasRunBefore = true
-		t.Fatal("This tests fails the first time and then succeeds")
+func Sleep(sleep time.Duration) handoff.TestFunc {
+	return func(t handoff.TB) {
+		time.Sleep(sleep)
 	}
 }
 
@@ -63,69 +75,95 @@ func Success(t handoff.TB) {
 	t.Log("Success")
 }
 
-type test struct {
+func LogAttempt(t handoff.TB) {
+	t.Logf("Attempt: %d", t.Attempt())
+}
+
+type instance struct {
 	h      *handoff.Server
 	client client.Client
 }
 
-func acceptanceTest() *test {
-	// save go test args
-	args := os.Args
-	// random port and in-memory database
-	os.Args = []string{"handoff-test", "-p", "0", "-d", ""}
+var defaultTestSuites = []handoff.TestSuite{
+	{
+		Name: "succeed",
+		Tests: []handoff.TestFunc{
+			Success,
+		},
+	},
+	{
+		Name: "panicing-setup",
+		Setup: func() error {
+			panic("panic")
+		},
+		Tests: []handoff.TestFunc{
+			Success,
+		},
+	},
+	{
+		Name:            "multiple-tests",
+		MaxTestAttempts: 2,
+		Tests: []handoff.TestFunc{
+			Success,
+			Flaky,
+			Retry(1),
+		},
+	},
+	{
+		Name: "failing-setup",
+		Setup: func() error {
+			return errors.New("error")
+		},
+		Tests: []handoff.TestFunc{
+			Success,
+		},
+	},
+	{
+		Name:            "needs-retry",
+		MaxTestAttempts: 2,
+		Tests: []handoff.TestFunc{
+			Retry(1),
+		},
+	},
+	{
+		Name: "soft-fail",
+		Tests: []handoff.TestFunc{
+			Success,
+			SoftFail,
+		},
+	},
+	{
+		Name: "my-app",
+		Tests: []handoff.TestFunc{
+			Flaky,
+		},
+	},
+	{
+		Name: "failing",
+		Tests: []handoff.TestFunc{
+			Fail,
+		},
+	},
+}
 
-	h := handoff.New(
-		handoff.WithTestSuite(handoff.TestSuite{
-			Name: "succeed",
-			Tests: []handoff.TestFunc{
-				Success,
-			},
-		}),
-		handoff.WithTestSuite(handoff.TestSuite{
-			Name: "panicing-setup",
-			Setup: func() error {
-				panic("panic")
-			},
-			Tests: []handoff.TestFunc{
-				Success,
-			},
-		}),
-		handoff.WithTestSuite(handoff.TestSuite{
-			Name: "failing-setup",
-			Setup: func() error {
-				return errors.New("error")
-			},
-			Tests: []handoff.TestFunc{
-				Success,
-			},
-		}),
-		handoff.WithTestSuite(handoff.TestSuite{
-			Name:            "needs-retry",
-			MaxTestAttempts: 2,
-			Tests: []handoff.TestFunc{
-				RetryOnce,
-			},
-		}),
-		handoff.WithTestSuite(handoff.TestSuite{
-			Name: "soft-fail",
-			Tests: []handoff.TestFunc{
-				Success,
-				SoftFail,
-			},
-		}),
-		handoff.WithTestSuite(handoff.TestSuite{
-			Name: "my-app",
-			Tests: []handoff.TestFunc{
-				Flaky,
-			},
-		}),
-		handoff.WithTestSuite(handoff.TestSuite{
-			Name: "failing",
-			Tests: []handoff.TestFunc{
-				Fail,
-			},
-		}),
-	)
+func handoffInstance(
+	suites []handoff.TestSuite,
+	schedules []handoff.ScheduledRun,
+	args []string,
+) *instance {
+	os.Args = args
+
+	var options []handoff.Option
+
+	for _, ts := range suites {
+		options = append(options, handoff.WithTestSuite(ts))
+	}
+
+	for _, s := range schedules {
+		options = append(options, handoff.WithScheduledRun(s))
+	}
+
+	h := handoff.New(options...)
 
 	go h.Run()
 
@@ -133,10 +171,7 @@ func acceptanceTest() *test {
 
 	port := h.ServerPort()
 
-	// restore go test args
-	os.Args = args
-
-	return &test{
+	return &instance{
 		h:      h,
 		client: client.New(fmt.Sprintf("http://localhost:%d", port), http.DefaultClient),
 	}
@@ -153,23 +188,19 @@ func latestTestAttempt(t *testing.T, tsr client.TestSuiteRun, testName string) c
 		}
 	}
 
-	if tr.Name == "" {
-		t.Fatalf("could not find any attempt for test name %s", testName)
-	}
+	assert.NotEmptyf(t, tr.Name, "could not find any attempt for test name %s", testName)
 
 	return tr
 }
 
-func (ti *test) createNewTestSuiteRun(t *testing.T, suiteName string) client.TestSuiteRun {
+func (ti *instance) createNewTestSuiteRun(t *testing.T, suiteName string) client.TestSuiteRun {
 	tsr, err := ti.client.CreateTestSuiteRun(context.Background(), suiteName, nil)
-	if err != nil {
-		t.Errorf("unable to create test suite run: %v", err)
-	}
+	assert.NoError(t, err, "unable to create test suite run")
 
 	return tsr
 }
 
-func (ti *test) waitForTestSuiteRunWithResult(t *testing.T, timeout time.Duration, suiteName string, runID int, status model.Result) client.TestSuiteRun {
+func (ti *instance) waitForTestSuiteRunWithResult(t *testing.T, timeout time.Duration, suiteName string, runID int, status model.Result) client.TestSuiteRun {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

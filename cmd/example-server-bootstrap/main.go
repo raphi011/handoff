@@ -9,6 +9,8 @@ import (
 
 	"github.com/raphi011/handoff"
 	"github.com/stretchr/testify/assert"
+
+	_ "github.com/raphi011/handoff/internal/packagetestexample"
 )
 
 func main() {
