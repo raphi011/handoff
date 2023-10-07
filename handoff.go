@@ -56,6 +56,9 @@ type Server struct {
 	// cron object used for scheduled runs
 	cron *cron.Cron
 
+	// a temp cache of currently executing test suite runs
+	tempTestSuiteRuns *storage.TsrCache
+
 	runningTestSuites sync.WaitGroup
 
 	httpServer *http.Server
@@ -74,6 +77,8 @@ type config struct {
 	Port int `arg:"-p,env:HANDOFF_PORT" help:"port used by the server (server mode only)" default:"1337"`
 
 	EnablePprof bool `arg:"--enable-pprof" help:"enable pprof debugging endpoints" default:"false"`
+
+	EnableBadgerDb bool `arg:"--enable-badger" help:"enable experimental badger db" default:"false"`
 
 	// location of the sqlite database file, if empty we default
 	// to an in-memory database.
@@ -134,6 +139,7 @@ func New(opts ...Option) *Server {
 		_userProvidedTestSuites: registeredSuites,
 		schedules:               registeredSchedules,
 		readOnlyTestSuites:      map[string]model.TestSuite{},
+		tempTestSuiteRuns:       storage.NewTsrCache(),
 		started:                 make(chan any),
 		exit:                    make(chan os.Signal, 1),
 		shutdown:                make(chan error, 1),
@@ -176,17 +182,27 @@ func (s *Server) Run() error {
 
 	signal.Notify(s.exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	db, err := storage.NewSqlite(s.config.DatabaseFilePath, s.log)
-	if err != nil {
-		return fmt.Errorf("init storage: %w", err)
+	var err error
+
+	if s.config.EnableBadgerDb {
+		s.storage, err = storage.NewBadgerStorage(s.config.DatabaseFilePath, s.log)
+		if err != nil {
+			return fmt.Errorf("init badger storage: %w", err)
+		}
+	} else {
+		s.storage, err = storage.NewSqlite(s.config.DatabaseFilePath, s.log)
+		if err != nil {
+			return fmt.Errorf("init sqlte storage: %w", err)
+		}
 	}
-	s.storage = db
 
 	if err := s.startSchedules(); err != nil {
 		return fmt.Errorf("start schedules: %w", err)
 	}
 
-	s.runHTTP()
+	if err = s.runHTTP(); err != nil {
+		return fmt.Errorf("start http server: %w", err)
+	}
 
 	s.log.Info(fmt.Sprintf("Server started after %s", time.Since(startupStart)))
 
