@@ -20,19 +20,17 @@ type BadgerStorage struct {
 }
 
 func NewBadgerStorage(dbPath string, log *slog.Logger) (*BadgerStorage, error) {
-	s := &BadgerStorage{
-		log:       log,
-		sequences: make(map[string]*badger.Sequence),
-	}
-	var err error
-
-	if dbPath == "" {
-		s.db, err = badger.Open(badger.DefaultOptions("").WithInMemory(true))
-	} else {
-		s.db, err = badger.Open(badger.DefaultOptions(dbPath))
-	}
+	badgerDB, err := badger.Open(badger.DefaultOptions(dbPath).
+		WithLoggingLevel(badger.ERROR).
+		WithInMemory(dbPath == ""))
 	if err != nil {
 		return nil, fmt.Errorf("opening badger database: %w", err)
+	}
+
+	s := &BadgerStorage{
+		log:       log,
+		db:        badgerDB,
+		sequences: make(map[string]*badger.Sequence),
 	}
 
 	return s, nil
@@ -79,13 +77,15 @@ func testSuiteRunKey(suiteName string, id int) []byte {
 }
 
 func (b *BadgerStorage) getSequence(key []byte) (*badger.Sequence, error) {
+	b.lock.Lock()
 	seq, found := b.sequences[string(key)]
+	b.lock.Unlock()
+
 	if found {
 		return seq, nil
 	}
 
 	b.lock.Lock()
-	defer b.lock.Unlock()
 
 	seq, found = b.sequences[string(key)]
 	if !found {
@@ -97,18 +97,20 @@ func (b *BadgerStorage) getSequence(key []byte) (*badger.Sequence, error) {
 		b.sequences[string(key)] = seq
 	}
 
+	b.lock.Unlock()
+
 	return seq, nil
 }
 
-func (b *BadgerStorage) InsertTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) error {
+func (b *BadgerStorage) InsertTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) (int, error) {
 	seq, err := b.getSequence([]byte(tsr.SuiteName))
 	if err != nil {
-		return err
+		return -1, err
 	}
 
 	seqID, err := seq.Next()
 	if err != nil {
-		return fmt.Errorf("unable to get next sequence: %w", err)
+		return -1, fmt.Errorf("unable to get next sequence: %w", err)
 	}
 	id := int(seqID) + 1
 	// start sequence with 1
@@ -118,7 +120,7 @@ func (b *BadgerStorage) InsertTestSuiteRun(ctx context.Context, tsr model.TestSu
 		t.SuiteRunID = id
 	}
 
-	return b.UpdateTestSuiteRun(ctx, tsr)
+	return id, b.UpdateTestSuiteRun(ctx, tsr)
 }
 
 func (b *BadgerStorage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) error {
@@ -194,50 +196,4 @@ func (b *BadgerStorage) LoadTestSuiteRunsByName(ctx context.Context, suiteName s
 	})
 
 	return runs, err
-}
-
-func (b *BadgerStorage) LoadTestRuns(ctx context.Context, suiteName string, tsrID int) ([]*model.TestRun, error) {
-	tsr, err := b.LoadTestSuiteRun(ctx, suiteName, tsrID)
-	if err != nil {
-		return nil, err
-	}
-
-	return tsr.TestResults, nil
-}
-
-func (b *BadgerStorage) LoadTestRun(ctx context.Context, suiteName string, tsrID int, testName string) ([]model.TestRun, error) {
-	// todo
-	return []model.TestRun{}, nil
-}
-
-func (b *BadgerStorage) InsertTestRun(ctx context.Context, tr model.TestRun) error {
-	tsr, err := b.LoadTestSuiteRun(ctx, tr.SuiteName, tr.SuiteRunID)
-	if err != nil {
-		return nil
-	}
-
-	tsr.TestResults = append(tsr.TestResults, &tr)
-
-	return nil
-}
-
-func (b *BadgerStorage) UpdateTestRun(ctx context.Context, tr model.TestRun) error {
-	tsr, err := b.LoadTestSuiteRun(ctx, tr.SuiteName, tr.SuiteRunID)
-	if err != nil {
-		return nil
-	}
-
-	tsr.TestResults = append(tsr.TestResults, &tr)
-
-	for i := 0; i < len(tsr.TestResults); i++ {
-		tri := tsr.TestResults[i]
-
-		if tr.Attempt == tri.Attempt && tr.Name == tri.Name {
-			tsr.TestResults[i] = &tr
-		}
-	}
-
-	b.UpdateTestSuiteRun(ctx, tsr)
-
-	return nil
 }

@@ -14,21 +14,27 @@ func NewTsrCache() *TsrCache {
 	return &TsrCache{}
 }
 
-func (c *TsrCache) Save(tsr model.TestSuiteRun) {
-	c.m.Store(testSuiteRunKey(tsr.SuiteName, tsr.ID), tsr)
+func (c *TsrCache) Save(tsr *model.TestSuiteRun) {
+	c.m.Store(string(testSuiteRunKey(tsr.SuiteName, tsr.ID)), tsr)
 }
 
-func (c *TsrCache) Load(suiteName string, id int) (model.TestSuiteRun, error) {
-	val, ok := c.m.Load(testSuiteRunKey(suiteName, id))
+func (c *TsrCache) Load(suiteName string, id int) (model.TestSuiteRun, bool) {
+	val, ok := c.m.Load(string(testSuiteRunKey(suiteName, id)))
 	if !ok {
-		return model.TestSuiteRun{}, model.NotFoundError{}
+		return model.TestSuiteRun{}, false
 	}
 
-	return val.(model.TestSuiteRun), nil
+	return *val.(*model.TestSuiteRun), true
+
+	// tsrCopy := *tsr
+
+	// copy(tsrCopy.TestResults, tsr.TestResults)
+
+	// return b, true
 }
 
 func (c *TsrCache) LoadAndDelete(suiteName string, id int) (model.TestSuiteRun, error) {
-	val, ok := c.m.LoadAndDelete(testSuiteRunKey(suiteName, id))
+	val, ok := c.m.LoadAndDelete(string(testSuiteRunKey(suiteName, id)))
 	if !ok {
 		return model.TestSuiteRun{}, model.NotFoundError{}
 	}

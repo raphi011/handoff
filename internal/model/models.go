@@ -6,7 +6,6 @@ package model
 import (
 	"fmt"
 	"regexp"
-	"sync"
 	"time"
 )
 
@@ -38,11 +37,7 @@ type TestSuiteRun struct {
 	// Environment is additional information on where the tests are run (e.g. cluster name).
 	Environment string `json:"environment"`
 	// TestResults contains the detailed test results of each test.
-	TestResults []*TestRun `json:"testResults"`
-}
-
-func (t TestSuiteRun) ShouldRetry(tr TestRun) bool {
-	return tr.Result == ResultFailed && tr.Attempt < t.Params.MaxTestAttempts
+	TestResults []TestRun `json:"testResults"`
 }
 
 type RunParams struct {
@@ -55,6 +50,22 @@ type RunParams struct {
 	Timeout         time.Duration
 	// TestFilter filters out a subset of the tests and skips the remaining ones.
 	TestFilter *regexp.Regexp
+}
+
+func (tsr TestSuiteRun) Copy() TestSuiteRun {
+	tsrCopy := tsr
+	tsrCopy.TestResults = []TestRun{}
+
+	for _, tr := range tsr.TestResults {
+		tsrCopy.TestResults = append(tsrCopy.TestResults, tr.Copy())
+	}
+
+	return tsrCopy
+
+}
+
+func (t TestSuiteRun) ShouldRetry(tr TestRun) bool {
+	return tr.Result == ResultFailed && tr.Attempt < t.Params.MaxTestAttempts
 }
 
 func (tsr TestSuiteRun) ResultFromTestResults() Result {
@@ -73,8 +84,8 @@ func (tsr TestSuiteRun) ResultFromTestResults() Result {
 	return result
 }
 
-func (tsr TestSuiteRun) LatestTestAttempts() map[string]*TestRun {
-	latestAttempts := map[string]*TestRun{}
+func (tsr TestSuiteRun) LatestTestAttempts() map[string]TestRun {
+	latestAttempts := map[string]TestRun{}
 
 	for i := range tsr.TestResults {
 		tr := tsr.TestResults[i]
@@ -87,8 +98,16 @@ func (tsr TestSuiteRun) LatestTestAttempts() map[string]*TestRun {
 	return latestAttempts
 }
 
-func (tsr TestSuiteRun) LatestTestAttempt(testName string) *TestRun {
-	return tsr.LatestTestAttempts()[testName]
+func (tsr TestSuiteRun) TestRunsByName(testName string) []TestRun {
+	runs := []TestRun{}
+
+	for _, tr := range tsr.TestResults {
+		if tr.Name == testName {
+			runs = append(runs, tr)
+		}
+	}
+
+	return runs
 }
 
 func (tsr TestSuiteRun) IsFlaky() bool {
@@ -104,9 +123,9 @@ func (tsr TestSuiteRun) IsFlaky() bool {
 func (tsr TestSuiteRun) PendingTests() []*TestRun {
 	pendingRuns := []*TestRun{}
 
-	for _, tr := range tsr.TestResults {
-		if tr.Result == ResultPending {
-			pendingRuns = append(pendingRuns, tr)
+	for i := range tsr.TestResults {
+		if tsr.TestResults[i].Result == ResultPending {
+			pendingRuns = append(pendingRuns, &tsr.TestResults[i])
 		}
 	}
 
@@ -148,6 +167,14 @@ type TestRun struct {
 	Context TestContext `json:"context"`
 }
 
+func (tr TestRun) Copy() TestRun {
+	trCopy := tr
+	// todo: copy values? We currently only need this during
+	// test suite run where the context is empty, this might change though.
+	trCopy.Context = make(TestContext)
+	return trCopy
+}
+
 func (t TestRun) NewAttempt() TestRun {
 	return TestRun{
 		SuiteName:  t.SuiteName,
@@ -187,7 +214,7 @@ type TestSuite struct {
 	Setup     func() error
 	Teardown  func() error
 	Tests     map[string]TestFunc
-	lock      *sync.Mutex
+	// lock      *sync.Mutex
 }
 
 func (t TestSuite) SafeTeardown() (err error) {

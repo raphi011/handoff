@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -43,31 +42,28 @@ type Server struct {
 	// scheduled runs configured by the user
 	schedules []ScheduledRun
 
-	shuttingDown bool
-
 	// started will be closed when the service has started.
 	started chan any
-	// shutdown will be closed when the service has shut down.
-	shutdown chan error
 
-	// exit receives os signals
-	exit chan os.Signal
+	// hasShutdown will be closed when the service has shut down.
+	hasShutdown chan error
+
+	// shutdown signals the server to shut down.
+	shutdown chan any
 
 	// cron object used for scheduled runs
 	cron *cron.Cron
 
 	// a temp cache of currently executing test suite runs
-	tempTestSuiteRuns *storage.TsrCache
+	// tempTestSuiteRuns *storage.TsrCache
 
 	runningTestSuites sync.WaitGroup
 
 	httpServer *http.Server
 
-	suiteID atomic.Uint64
-
 	log *slog.Logger
 
-	storage storage.Storage
+	storage *storage.BadgerStorage
 }
 
 type config struct {
@@ -77,8 +73,6 @@ type config struct {
 	Port int `arg:"-p,env:HANDOFF_PORT" help:"port used by the server (server mode only)" default:"1337"`
 
 	EnablePprof bool `arg:"--enable-pprof" help:"enable pprof debugging endpoints" default:"false"`
-
-	EnableBadgerDb bool `arg:"--enable-badger" help:"enable experimental badger db" default:"false"`
 
 	// location of the sqlite database file, if empty we default
 	// to an in-memory database.
@@ -139,11 +133,11 @@ func New(opts ...Option) *Server {
 		_userProvidedTestSuites: registeredSuites,
 		schedules:               registeredSchedules,
 		readOnlyTestSuites:      map[string]model.TestSuite{},
-		tempTestSuiteRuns:       storage.NewTsrCache(),
-		started:                 make(chan any),
-		exit:                    make(chan os.Signal, 1),
-		shutdown:                make(chan error, 1),
-		log:                     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		// tempTestSuiteRuns:       storage.NewTsrCache(),
+		started:     make(chan any),
+		hasShutdown: make(chan error, 1),
+		shutdown:    make(chan any),
+		log:         slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
 
 	s.hooks = newHookManager(s.asyncHookCallback)
@@ -182,21 +176,13 @@ func (s *Server) Run(args []string) error {
 		return fmt.Errorf("init hooks: %w", err)
 	}
 
-	signal.Notify(s.exit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	s.signalHandler()
 
-	var err error
-
-	if s.config.EnableBadgerDb {
-		s.storage, err = storage.NewBadgerStorage(s.config.DatabaseFilePath, s.log)
-		if err != nil {
-			return fmt.Errorf("init badger storage: %w", err)
-		}
-	} else {
-		s.storage, err = storage.NewSqlite(s.config.DatabaseFilePath, s.log)
-		if err != nil {
-			return fmt.Errorf("init sqlte storage: %w", err)
-		}
+	storage, err := storage.NewBadgerStorage(s.config.DatabaseFilePath, s.log)
+	if err != nil {
+		return fmt.Errorf("init badger storage: %w", err)
 	}
+	s.storage = storage
 
 	if err := s.startSchedules(); err != nil {
 		return fmt.Errorf("start schedules: %w", err)
@@ -212,13 +198,14 @@ func (s *Server) Run(args []string) error {
 
 	s.resumePendingTestRuns()
 
-	signal := <-s.exit
+	<-s.shutdown
 
-	s.gracefulShutdown(signal)
+	s.gracefulShutdown()
 
 	return nil
 }
 
+// parseConfig was more or less copied from arg.MustParse()
 func (s *Server) parseConfig(args []string) {
 	program := "handoff"
 	if len(args) > 0 {
@@ -235,7 +222,7 @@ func (s *Server) parseConfig(args []string) {
 	err = p.Parse(args)
 	switch {
 	case err == arg.ErrHelp:
-		p.WriteHelpForSubcommand(os.Stdout)
+		p.WriteHelp(os.Stdout)
 		os.Exit(0)
 	case err == arg.ErrVersion:
 		fmt.Fprintln(os.Stdout, s.config.Version())
@@ -259,8 +246,21 @@ func (s *Server) WaitForStartup() {
 
 // Shutdown shuts down the server and blocks until it is finished.
 func (s *Server) Shutdown() error {
-	s.exit <- os.Interrupt
-	return <-s.shutdown
+	close(s.shutdown)
+	return <-s.hasShutdown
+}
+
+func (s *Server) signalHandler() {
+	signalChan := make(chan os.Signal, 1)
+
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		r := <-signalChan
+		s.log.Info("Received signal, shutting down", "signal", r.String())
+
+		close(s.shutdown)
+	}()
 }
 
 func (s *Server) resumePendingTestRuns() {
@@ -282,12 +282,6 @@ func (s *Server) resumePendingTestRuns() {
 			continue
 		}
 
-		tsr.TestResults, err = s.storage.LoadTestRuns(ctx, tsr.SuiteName, tsr.ID)
-		if err != nil {
-			s.log.Warn("Unable to load pending test suite test runs", "error", err)
-			continue
-		}
-
 		continued++
 
 		go s.runTestSuite(testSuite, tsr)
@@ -298,11 +292,7 @@ func (s *Server) resumePendingTestRuns() {
 	}
 }
 
-func (s *Server) gracefulShutdown(signal os.Signal) {
-	s.log.Info("Received signal, shutting down", "signal", signal.String())
-
-	s.shuttingDown = true
-
+func (s *Server) gracefulShutdown() {
 	httpStopped := s.stopHTTP()
 	cronStopCtx := s.cron.Stop()
 
@@ -323,8 +313,8 @@ func (s *Server) gracefulShutdown(signal os.Signal) {
 
 	err := errors.Join(httpErr, dbErr)
 
-	s.shutdown <- err
-	close(s.shutdown)
+	s.hasShutdown <- err
+	close(s.hasShutdown)
 }
 
 func (s *Server) printTestSuites() {
@@ -397,29 +387,15 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 		option.MaxTestAttempts = ts.MaxTestAttempts
 	}
 
-	suiteID := s.suiteID.Add(1)
-
 	tsr := model.TestSuiteRun{
 		// TODO lock test suite and fetch latest id from storage.
-		ID:          int(suiteID),
 		SuiteName:   ts.Name,
-		TestResults: []*model.TestRun{},
+		TestResults: []model.TestRun{},
 		Result:      model.ResultPending,
 		Params:      option,
 		Tests:       len(ts.Tests),
 		Scheduled:   time.Now(),
 		Environment: s.config.Environment,
-	}
-
-	ctx, err := s.storage.StartTransaction(context.Background())
-	if err != nil {
-		return model.TestSuiteRun{}, fmt.Errorf("unable to start transaction: %w", err)
-	}
-	defer s.storage.RollbackTransaction(ctx)
-
-	err = s.storage.InsertTestSuiteRun(ctx, tsr)
-	if err != nil {
-		return model.TestSuiteRun{}, fmt.Errorf("unable to persist new test suite run: %w", err)
 	}
 
 	for testName := range ts.Tests {
@@ -438,21 +414,34 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 			Context:    model.TestContext{},
 		}
 
-		err = s.storage.InsertTestRun(ctx, tr)
-		if err != nil {
-			return model.TestSuiteRun{}, fmt.Errorf("unable to persist new test run: %w", err)
-		}
-
-		tsr.TestResults = append(tsr.TestResults, &tr)
+		tsr.TestResults = append(tsr.TestResults, tr)
 	}
 
-	if err = s.storage.CommitTransaction(ctx); err != nil {
-		return model.TestSuiteRun{}, fmt.Errorf("unable to persist the test suite run: %w", err)
+	ctx := context.Background()
+
+	var err error
+
+	tsr.ID, err = s.storage.InsertTestSuiteRun(ctx, tsr)
+	if err != nil {
+		return model.TestSuiteRun{}, fmt.Errorf("unable to persist new test suite run: %w", err)
 	}
+
+	tsrCopy := tsr.Copy()
 
 	go s.runTestSuite(ts, tsr)
 
-	return tsr, nil
+	// return a copy otherwise we might get a data race when marshalling the testresults
+	// and running the tests
+	return tsrCopy, nil
+}
+
+func (s *Server) isShuttingDown() bool {
+	select {
+	case <-s.shutdown:
+		return true
+	default:
+		return false
+	}
 }
 
 // runTestSuite executes a test suite run. It will run all tests that are either pending
@@ -466,20 +455,14 @@ func (s *Server) runTestSuite(
 		return
 	}
 
-	log := s.log.With("suite-name", suite.Name, "run-id", tsr.ID)
-
 	ctx := context.Background()
+
+	log := s.log.With("suite-name", suite.Name, "run-id", tsr.ID)
 
 	s.runningTestSuites.Add(1)
 	defer s.runningTestSuites.Done()
 
-	timeNotSet := time.Time{}
-	if tsr.Start == timeNotSet {
-		tsr.Start = time.Now()
-		if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
-			log.Error("updating test suite run failed", "error", err)
-		}
-	}
+	tsr.Start = time.Now()
 
 	testSuitesRunning := metric.TestSuitesRunning.WithLabelValues(suite.Namespace, suite.Name)
 	testSuitesRunning.Inc()
@@ -492,65 +475,52 @@ func (s *Server) runTestSuite(
 		end := time.Now()
 
 		tsr.Result = model.ResultFailed
-		tsr.End = end
 		tsr.SetupLogs = fmt.Sprintf("setup failed: %v", err)
 
-		for _, tr := range tsr.LatestTestAttempts() {
+		for i := 0; i < len(tsr.TestResults); i++ {
+			tr := &tsr.TestResults[i]
+
 			if tr.Result == model.ResultPending {
 				tr.Result = model.ResultSkipped
 				tr.Logs = "test suite run setup failed: skipped"
 				tr.End = end
+			}
+		}
+	}
 
-				if err = s.storage.UpdateTestRun(ctx, *tr); err != nil {
-					log.Error("could not mark test run as skipped after test suite setup failed", "error", err)
-				}
+	// skip if setup failed
+	if tsr.Result != model.ResultFailed {
+		for i := 0; i < len(tsr.TestResults); i++ {
+			tr := &tsr.TestResults[i]
+
+			if s.isShuttingDown() || tr.Result != model.ResultPending {
+				continue
+			}
+
+			s.runTest(ctx, suite, tsr, tr)
+
+			if tsr.ShouldRetry(*tr) {
+				newAttempt := tr.NewAttempt()
+
+				tsr.TestResults = append(tsr.TestResults, newAttempt)
 			}
 		}
 
-		if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
-			log.Error("updating test suite run failed", "error", err)
+		if err := suite.SafeTeardown(); err != nil {
+			log.Warn("teardown of suite failed", "error", err)
 		}
 
-		return
+		tsr.Result = tsr.ResultFromTestResults()
 	}
 
-	testsToRun := tsr.PendingTests()
-
-	for i := 0; i < len(testsToRun); i++ {
-		tr := testsToRun[i]
-
-		if s.shuttingDown {
-			// we will continue pending test runs on restart
-			continue
-		}
-
-		s.runTest(ctx, suite, &tsr, tr)
-
-		if tsr.ShouldRetry(*tr) {
-			newAttempt := tr.NewAttempt()
-
-			if err := s.storage.InsertTestRun(ctx, newAttempt); err != nil {
-				log.Error("could not insert new test run attempt", "error", err)
-				return
-			}
-			testsToRun = append(testsToRun, &newAttempt)
-			tsr.TestResults = append(tsr.TestResults, &newAttempt)
-		}
-	}
-
-	if err := suite.SafeTeardown(); err != nil {
-		log.Warn("teardown of suite failed", "error", err)
-	}
-
-	// TODO: Add the plugin context to the `testRunFinishedEvent`
-	s.hooks.notifyTestSuiteFinished(suite, tsr)
-
-	tsr.Result = tsr.ResultFromTestResults()
 	if tsr.Result != model.ResultPending {
 		tsr.End = time.Now()
 	}
 	tsr.DurationInMS = tsr.TestSuiteDuration()
 	tsr.Flaky = tsr.IsFlaky()
+
+	// TODO: Add the plugin context to the `testRunFinishedEvent`
+	s.hooks.notifyTestSuiteFinished(suite, tsr)
 
 	if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
 		log.Error("updating test suite run failed", "error", err)
@@ -565,7 +535,12 @@ func (s *Server) runTestSuite(
 
 // runTest runs an individual test that is part of a test suite. This function must only be called
 // by `runTestSuite()`.
-func (s *Server) runTest(ctx context.Context, suite model.TestSuite, testSuiteRun *model.TestSuiteRun, testRun *model.TestRun) {
+func (s *Server) runTest(
+	ctx context.Context,
+	suite model.TestSuite,
+	testSuiteRun model.TestSuiteRun,
+	testRun *model.TestRun,
+) {
 	t := T{
 		attempt:        testRun.Attempt,
 		suiteName:      suite.Name,
@@ -584,7 +559,7 @@ func (s *Server) runTest(ctx context.Context, suite model.TestSuite, testSuiteRu
 
 		metric.TestRunsTotal.WithLabelValues(suite.Namespace, suite.Name, string(result)).Inc()
 
-		s.hooks.notifyTestFinished(suite, *testSuiteRun, testRun.Name, t.runtimeContext)
+		s.hooks.notifyTestFinished(suite, testSuiteRun, testRun.Name, t.runtimeContext)
 
 		logs := t.logs
 
@@ -604,11 +579,7 @@ func (s *Server) runTest(ctx context.Context, suite model.TestSuite, testSuiteRu
 		testRun.Logs = logs.String()
 		testRun.Context = t.runtimeContext
 
-		if err := s.storage.UpdateTestRun(ctx, *testRun); err != nil {
-			s.log.Error("updating test suite run failed", "suite-name", suite.Name, "error", err)
-		}
-
-		s.hooks.notifyTestFinishedAync(suite, *testSuiteRun, testRun.Name, t.runtimeContext)
+		s.hooks.notifyTestFinishedAync(suite, testSuiteRun, testRun.Name, t.runtimeContext)
 
 		if err = t.runTestCleanup(); err != nil {
 			s.log.Warn("test cleanup failed", "suite-name", suite.Name, "error", err)

@@ -19,36 +19,28 @@ func TestBadgerdb(t *testing.T) {
 
 	suiteName := "test-suite"
 
-	tr := &model.TestRun{
+	tr := model.TestRun{
 		SuiteName: suiteName,
 		Attempt:   1,
 		Name:      "Bla",
 	}
 
-	err = db.InsertTestSuiteRun(ctx, model.TestSuiteRun{
+	id, err := db.InsertTestSuiteRun(ctx, model.TestSuiteRun{
 		SuiteName:   suiteName,
-		TestResults: []*model.TestRun{tr},
+		TestResults: []model.TestRun{tr},
 	})
 	assert.NoError(t, err)
+	assert.Equal(t, 1, id)
 
-	err = db.InsertTestSuiteRun(ctx, model.TestSuiteRun{
+	id, err = db.InsertTestSuiteRun(ctx, model.TestSuiteRun{
 		SuiteName: suiteName,
 	})
 	assert.NoError(t, err)
+	assert.Equal(t, 2, id)
 
-	tsr, err := db.LoadTestSuiteRun(ctx, suiteName, 1)
+	_, err = db.LoadTestSuiteRun(ctx, suiteName, 1)
 	assert.NoError(t, err)
 
-	t.Logf("%+v", tsr)
-
-	runs, err := db.LoadTestSuiteRunsByName(ctx, suiteName)
+	_, err = db.LoadTestSuiteRunsByName(ctx, suiteName)
 	assert.NoError(t, err)
-
-	t.Logf("%+v", runs)
-
-	testRuns, err := db.LoadTestRuns(ctx, suiteName, 1)
-	assert.NoError(t, err)
-
-	t.Logf("%+v", testRuns)
-
 }

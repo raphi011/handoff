@@ -239,10 +239,12 @@ func (s *Server) loadTestRuns(ctx context.Context, r *http.Request, p httprouter
 		return []model.TestRun{}, malformedRequestError{param: "run-id", reason: "must be an integer"}
 	}
 
-	tr, err := s.storage.LoadTestRun(ctx, suiteName, runID, testName)
+	tsr, err := s.storage.LoadTestSuiteRun(ctx, suiteName, runID)
 	if err != nil {
 		return []model.TestRun{}, err
 	}
+
+	tr := tsr.TestRunsByName(testName)
 
 	return tr, nil
 }
@@ -261,11 +263,6 @@ func (s *Server) loadTestSuiteRun(ctx context.Context, p httprouter.Params) (mod
 	}
 
 	tr, err := s.storage.LoadTestSuiteRun(ctx, suiteName, runID)
-	if err != nil {
-		return model.TestSuiteRun{}, err
-	}
-
-	tr.TestResults, err = s.storage.LoadTestRuns(ctx, suiteName, runID)
 	if err != nil {
 		return model.TestSuiteRun{}, err
 	}
