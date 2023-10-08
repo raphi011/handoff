@@ -155,7 +155,9 @@ func New(opts ...Option) *Server {
 	return s
 }
 
-func (s *Server) Run() error {
+// Run runs the server with the passed in flags. Usually you want to pass in
+// `os.Args` here.
+func (s *Server) Run(args []string) error {
 	startupStart := time.Now()
 
 	// we want to make sure that the test suite functions only
@@ -166,7 +168,7 @@ func (s *Server) Run() error {
 	stdliblog.SetOutput(io.Discard)
 	defer stdliblog.SetOutput(os.Stderr)
 
-	arg.MustParse(&s.config)
+	s.parseConfig(args)
 
 	if err := s.mapTestSuites(); err != nil {
 		return err
@@ -215,6 +217,32 @@ func (s *Server) Run() error {
 	s.gracefulShutdown(signal)
 
 	return nil
+}
+
+func (s *Server) parseConfig(args []string) {
+	program := "handoff"
+	if len(args) > 0 {
+		program = args[0]
+		args = args[1:]
+	}
+
+	p, err := arg.NewParser(arg.Config{Program: program}, &s.config)
+	if err != nil {
+		s.log.Error("Unable to create args parser", "error", err)
+		os.Exit(-1)
+	}
+
+	err = p.Parse(args)
+	switch {
+	case err == arg.ErrHelp:
+		p.WriteHelpForSubcommand(os.Stdout)
+		os.Exit(0)
+	case err == arg.ErrVersion:
+		fmt.Fprintln(os.Stdout, s.config.Version())
+		os.Exit(0)
+	case err != nil:
+		p.Fail(err.Error())
+	}
 }
 
 // ServerPort returns the port that the server is using. This is useful

@@ -114,14 +114,14 @@ func TestTestSuiteValidation(t *testing.T) {
 		},
 	}))
 
-	err := h.Run()
+	err := h.Run([]string{})
 	assert.Error(t, err, "Passing in a test suite without a name should fail")
 
 	h = handoff.New(handoff.WithTestSuite(handoff.TestSuite{
 		Name: "success",
 	}))
 
-	err = h.Run()
+	err = h.Run([]string{})
 	assert.Error(t, err, "Passing in a test suite without any tests should fail")
 
 	h = handoff.New(handoff.WithTestSuite(handoff.TestSuite{
@@ -136,7 +136,7 @@ func TestTestSuiteValidation(t *testing.T) {
 		},
 	}))
 
-	err = h.Run()
+	err = h.Run([]string{})
 	assert.Error(t, err, "Passing in multiple test suite with the same name should fail")
 }
 

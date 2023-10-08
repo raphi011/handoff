@@ -45,7 +45,7 @@ func main() {
 		handoff.WithScheduledRun(handoff.ScheduledRun{TestSuiteName: "my-app", Schedule: "@every 5s"}),
 	)
 
-	if err := h.Run(); err != nil {
+	if err := h.Run(os.Args); err != nil {
 		slog.Error(err.Error())
 		os.Exit(-1)
 	}

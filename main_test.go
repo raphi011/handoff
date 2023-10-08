@@ -25,12 +25,7 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	args := os.Args
-
 	te = handoffInstance(defaultTestSuites, nil, []string{"handoff-test", "-p", "0", "-d", ""})
-
-	// restore test command args, as m.Run() requires them.
-	os.Args = args
 
 	code := m.Run()
 
@@ -151,8 +146,6 @@ func handoffInstance(
 	schedules []handoff.ScheduledRun,
 	args []string,
 ) *instance {
-	os.Args = args
-
 	var options []handoff.Option
 
 	for _, ts := range suites {
@@ -165,7 +158,7 @@ func handoffInstance(
 
 	h := handoff.New(options...)
 
-	go h.Run()
+	go h.Run(args)
 
 	h.WaitForStartup()
 
