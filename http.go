@@ -69,7 +69,7 @@ func (s *Server) runHTTP() error {
 
 	go func() {
 		err = s.httpServer.Serve(l)
-		if err != nil {
+		if err != nil && err != http.ErrServerClosed {
 			s.log.Error("http server failed", "error", err)
 		}
 	}()
