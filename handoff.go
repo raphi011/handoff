@@ -284,7 +284,7 @@ func (s *Server) resumePendingTestRuns() {
 
 		continued++
 
-		go s.runTestSuite(testSuite, tsr)
+		s.runTestSuite(testSuite, tsr)
 	}
 
 	if continued > 0 {
@@ -428,7 +428,7 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 
 	tsrCopy := tsr.Copy()
 
-	go s.runTestSuite(ts, tsr)
+	s.runTestSuite(ts, tsr)
 
 	// return a copy otherwise we might get a data race when marshalling the testresults
 	// and running the tests
@@ -450,87 +450,90 @@ func (s *Server) runTestSuite(
 	suite model.TestSuite,
 	tsr model.TestSuiteRun,
 ) {
-	if tsr.Result == model.ResultPassed {
-		// nothing to do here
-		return
-	}
-
-	ctx := context.Background()
-
-	log := s.log.With("suite-name", suite.Name, "run-id", tsr.ID)
-
 	s.runningTestSuites.Add(1)
-	defer s.runningTestSuites.Done()
 
-	tsr.Start = time.Now()
+	go func() {
+		defer s.runningTestSuites.Done()
 
-	testSuitesRunning := metric.TestSuitesRunning.WithLabelValues(suite.Namespace, suite.Name)
-	testSuitesRunning.Inc()
-	defer func() {
-		testSuitesRunning.Dec()
+		if tsr.Result == model.ResultPassed {
+			// nothing to do here
+			return
+		}
+
+		ctx := context.Background()
+
+		log := s.log.With("suite-name", suite.Name, "run-id", tsr.ID)
+
+		tsr.Start = time.Now()
+
+		testSuitesRunning := metric.TestSuitesRunning.WithLabelValues(suite.Namespace, suite.Name)
+		testSuitesRunning.Inc()
+		defer func() {
+			testSuitesRunning.Dec()
+		}()
+
+		if err := suite.SafeSetup(); err != nil {
+			log.Warn("setup of suite failed", "error", err)
+			end := time.Now()
+
+			tsr.Result = model.ResultFailed
+			tsr.SetupLogs = fmt.Sprintf("setup failed: %v", err)
+
+			for i := 0; i < len(tsr.TestResults); i++ {
+				tr := &tsr.TestResults[i]
+
+				if tr.Result == model.ResultPending {
+					tr.Result = model.ResultSkipped
+					tr.Logs = "test suite run setup failed: skipped"
+					tr.End = end
+				}
+			}
+		}
+
+		// skip if setup failed
+		if tsr.Result != model.ResultFailed {
+			for i := 0; i < len(tsr.TestResults); i++ {
+				tr := &tsr.TestResults[i]
+
+				if s.isShuttingDown() || tr.Result != model.ResultPending {
+					continue
+				}
+
+				s.runTest(ctx, suite, tsr, tr)
+
+				if tsr.ShouldRetry(*tr) {
+					newAttempt := tr.NewAttempt()
+
+					tsr.TestResults = append(tsr.TestResults, newAttempt)
+				}
+			}
+
+			if err := suite.SafeTeardown(); err != nil {
+				log.Warn("teardown of suite failed", "error", err)
+			}
+
+			tsr.Result = tsr.ResultFromTestResults()
+		}
+
+		if tsr.Result != model.ResultPending {
+			tsr.End = time.Now()
+		}
+		tsr.DurationInMS = tsr.TestSuiteDuration()
+		tsr.Flaky = tsr.IsFlaky()
+
+		// TODO: Add the plugin context to the `testRunFinishedEvent`
+		s.hooks.notifyTestSuiteFinished(suite, tsr)
+
+		if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
+			log.Error("updating test suite run failed", "error", err)
+		}
+
+		if tsr.Result != model.ResultPending {
+			s.hooks.notifyTestSuiteFinishedAsync(suite, tsr)
+
+			metric.TestSuitesRun.WithLabelValues(suite.Namespace, suite.Name, string(tsr.Result)).Inc()
+		}
 	}()
-
-	if err := suite.SafeSetup(); err != nil {
-		log.Warn("setup of suite failed", "error", err)
-		end := time.Now()
-
-		tsr.Result = model.ResultFailed
-		tsr.SetupLogs = fmt.Sprintf("setup failed: %v", err)
-
-		for i := 0; i < len(tsr.TestResults); i++ {
-			tr := &tsr.TestResults[i]
-
-			if tr.Result == model.ResultPending {
-				tr.Result = model.ResultSkipped
-				tr.Logs = "test suite run setup failed: skipped"
-				tr.End = end
-			}
-		}
-	}
-
-	// skip if setup failed
-	if tsr.Result != model.ResultFailed {
-		for i := 0; i < len(tsr.TestResults); i++ {
-			tr := &tsr.TestResults[i]
-
-			if s.isShuttingDown() || tr.Result != model.ResultPending {
-				continue
-			}
-
-			s.runTest(ctx, suite, tsr, tr)
-
-			if tsr.ShouldRetry(*tr) {
-				newAttempt := tr.NewAttempt()
-
-				tsr.TestResults = append(tsr.TestResults, newAttempt)
-			}
-		}
-
-		if err := suite.SafeTeardown(); err != nil {
-			log.Warn("teardown of suite failed", "error", err)
-		}
-
-		tsr.Result = tsr.ResultFromTestResults()
-	}
-
-	if tsr.Result != model.ResultPending {
-		tsr.End = time.Now()
-	}
-	tsr.DurationInMS = tsr.TestSuiteDuration()
-	tsr.Flaky = tsr.IsFlaky()
-
-	// TODO: Add the plugin context to the `testRunFinishedEvent`
-	s.hooks.notifyTestSuiteFinished(suite, tsr)
-
-	if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
-		log.Error("updating test suite run failed", "error", err)
-	}
-
-	if tsr.Result != model.ResultPending {
-		s.hooks.notifyTestSuiteFinishedAsync(suite, tsr)
-
-		metric.TestSuitesRun.WithLabelValues(suite.Namespace, suite.Name, string(tsr.Result)).Inc()
-	}
 }
 
 // runTest runs an individual test that is part of a test suite. This function must only be called
