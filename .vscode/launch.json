@@ -10,7 +10,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "./cmd/example-server-bootstrap",
-            "args": ["-d", "./db"]
+            "args": ["-d", "./db", "-t", "20s"]
             
         },
         {

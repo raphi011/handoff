@@ -6,20 +6,27 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/raphi011/handoff/internal/model"
+	"github.com/robfig/cron/v3"
 )
 
 type BadgerStorage struct {
 	db  *badger.DB
 	log *slog.Logger
+	ttl time.Duration
 
 	lock      sync.Mutex
 	sequences map[string]*badger.Sequence
 }
 
-func NewBadgerStorage(dbPath string, log *slog.Logger) (*BadgerStorage, error) {
+func NewBadgerStorage(dbPath string,
+	ttl time.Duration,
+	gcCron *cron.Cron,
+	log *slog.Logger,
+) (*BadgerStorage, error) {
 	badgerDB, err := badger.Open(badger.DefaultOptions(dbPath).
 		WithLoggingLevel(badger.ERROR).
 		WithInMemory(dbPath == ""))
@@ -27,9 +34,21 @@ func NewBadgerStorage(dbPath string, log *slog.Logger) (*BadgerStorage, error) {
 		return nil, fmt.Errorf("opening badger database: %w", err)
 	}
 
+	if gcCron != nil {
+		_, err = gcCron.AddFunc("@every 5m", func() {
+			if err := badgerDB.RunValueLogGC(0.5); err != nil && err != badger.ErrNoRewrite {
+				log.Warn("badger gc", "error", err)
+			}
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	s := &BadgerStorage{
 		log:       log,
 		db:        badgerDB,
+		ttl:       ttl,
 		sequences: make(map[string]*badger.Sequence),
 	}
 
@@ -56,11 +75,15 @@ func getTx(ctx context.Context) *badger.Txn {
 	return tx
 }
 
-func (b *BadgerStorage) runTx(ctx context.Context, ftx func(t *badger.Txn) error) error {
+func (b *BadgerStorage) runTx(ctx context.Context, write bool, ftx func(t *badger.Txn) error) error {
 	if tx := getTx(ctx); tx != nil {
 		return ftx(tx)
 	} else {
-		return b.db.Update(ftx)
+		if write {
+			return b.db.Update(ftx)
+		} else {
+			return b.db.View(ftx)
+		}
 	}
 }
 
@@ -90,7 +113,7 @@ func (b *BadgerStorage) getSequence(key []byte) (*badger.Sequence, error) {
 	seq, found = b.sequences[string(key)]
 	if !found {
 		var err error
-		seq, err = b.db.GetSequence(key, 1000)
+		seq, err = b.db.GetSequence(key, 1)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get sequence: %w", err)
 		}
@@ -120,7 +143,7 @@ func (b *BadgerStorage) InsertTestSuiteRun(ctx context.Context, tsr model.TestSu
 		t.SuiteRunID = id
 	}
 
-	err = b.runTx(ctx, func(t *badger.Txn) error {
+	err = b.runTx(ctx, true, func(t *badger.Txn) error {
 		data, err := json.Marshal(tsr)
 		if err != nil {
 			return fmt.Errorf("marshalling test suite run: %w", err)
@@ -128,7 +151,7 @@ func (b *BadgerStorage) InsertTestSuiteRun(ctx context.Context, tsr model.TestSu
 
 		key := testSuiteRunKey(tsr.SuiteName, tsr.ID)
 
-		err = t.Set(key, data)
+		err = t.SetEntry(badger.NewEntry(key, data))
 		if err != nil {
 			return fmt.Errorf("inserting test suite run: %w", err)
 		}
@@ -147,26 +170,31 @@ func (b *BadgerStorage) InsertTestSuiteRun(ctx context.Context, tsr model.TestSu
 }
 
 func (b *BadgerStorage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) error {
-	err := b.runTx(ctx, func(t *badger.Txn) error {
+	err := b.runTx(ctx, true, func(t *badger.Txn) error {
 		data, err := json.Marshal(tsr)
 		if err != nil {
 			return fmt.Errorf("marshalling test suite run: %w", err)
 		}
 
 		key := testSuiteRunKey(tsr.SuiteName, tsr.ID)
-
-		err = t.Set(key, data)
-		if err != nil {
-			return fmt.Errorf("inserting test suite run: %w", err)
-		}
-
 		pendingKey := append([]byte("pending-"), key...)
+
+		e := badger.NewEntry(key, data)
 
 		if tsr.Result != model.ResultPending {
 			err = t.Delete(pendingKey)
 			if err != nil {
 				return fmt.Errorf("deleting pending key: %w", err)
 			}
+
+			if b.ttl > 0 {
+				e = e.WithTTL(b.ttl)
+			}
+		}
+
+		err = t.SetEntry(e)
+		if err != nil {
+			return fmt.Errorf("inserting test suite run: %w", err)
 		}
 
 		return nil
@@ -178,7 +206,7 @@ func (b *BadgerStorage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSu
 func (b *BadgerStorage) LoadTestSuiteRun(ctx context.Context, suiteName string, runID int) (model.TestSuiteRun, error) {
 	var tsr model.TestSuiteRun
 
-	err := b.runTx(ctx, func(txn *badger.Txn) error {
+	err := b.runTx(ctx, false, func(txn *badger.Txn) error {
 		var err error
 		tsr, err = loadTestSuiteRun(txn, testSuiteRunKey(suiteName, runID))
 		return err
@@ -208,7 +236,7 @@ func loadTestSuiteRun(txn *badger.Txn, key []byte) (model.TestSuiteRun, error) {
 func (b *BadgerStorage) LoadPendingTestSuiteRuns(ctx context.Context) ([]model.TestSuiteRun, error) {
 	pending := []model.TestSuiteRun{}
 
-	err := b.runTx(ctx, func(txn *badger.Txn) error {
+	err := b.runTx(ctx, false, func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
 
@@ -245,11 +273,11 @@ func (b *BadgerStorage) LoadPendingTestSuiteRuns(ctx context.Context) ([]model.T
 func (b *BadgerStorage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string) ([]model.TestSuiteRun, error) {
 	runs := []model.TestSuiteRun{}
 
-	err := b.runTx(ctx, func(txn *badger.Txn) error {
+	err := b.runTx(ctx, false, func(txn *badger.Txn) error {
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
 
-		prefix := []byte(suiteName + "-")
+		prefix := []byte("suite-" + suiteName + "-")
 
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()

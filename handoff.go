@@ -24,6 +24,8 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+var version = "dev"
+
 type Server struct {
 	// server configuration
 	config config
@@ -54,9 +56,6 @@ type Server struct {
 	// cron object used for scheduled runs
 	cron *cron.Cron
 
-	// a temp cache of currently executing test suite runs
-	// tempTestSuiteRuns *storage.TsrCache
-
 	runningTestSuites sync.WaitGroup
 
 	httpServer *http.Server
@@ -67,12 +66,14 @@ type Server struct {
 }
 
 type config struct {
+	Instance string
+
 	HostIP string `arg:"-h,--host,env:HANDOFF_HOST" help:"ip address the server should bind to" default:"localhost"`
 
 	// Port for the web api
 	Port int `arg:"-p,env:HANDOFF_PORT" help:"port used by the server (server mode only)" default:"1337"`
 
-	EnableDebugLogging bool `arg:"--debug-log" help:"enable debug level logging" default:"false"`
+	RunTTL time.Duration `arg:"-t,--ttl,env:HANDOFF_RUN_TTL" help:"test suite run retention TTL" default:"0"`
 
 	EnablePprof bool `arg:"--enable-pprof" help:"enable pprof debugging endpoints" default:"false"`
 
@@ -90,8 +91,7 @@ type config struct {
 }
 
 func (c config) Version() string {
-	// TODO: use debug/buildinfo to fetch git info?
-	return "Handoff (alpha)"
+	return fmt.Sprintf("Handoff (%s)", version)
 }
 
 // TestSuite represents the external view of the Testsuite to allow users of the library
@@ -123,7 +123,8 @@ var (
 	registeredSchedules []ScheduledRun
 )
 
-// Register registers test suites and schedules to be loaded when `*server.New()` is called.
+// Register registers test suites and schedules for the handoff server. Has to be called
+// before `handoff.New()` to take effect.
 func Register(suites []TestSuite, schedules []ScheduledRun) {
 	registeredSuites = append(registeredSuites, suites...)
 	registeredSchedules = append(registeredSchedules, schedules...)
@@ -135,13 +136,10 @@ func New(opts ...Option) *Server {
 		_userProvidedTestSuites: registeredSuites,
 		schedules:               registeredSchedules,
 		readOnlyTestSuites:      map[string]model.TestSuite{},
-		// tempTestSuiteRuns:       storage.NewTsrCache(),
-		started:     make(chan any),
-		hasShutdown: make(chan error, 1),
-		shutdown:    make(chan any),
-		log: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		})),
+		started:                 make(chan any),
+		hasShutdown:             make(chan error, 1),
+		shutdown:                make(chan any),
+		log:                     slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
 
 	s.hooks = newHookManager(s.asyncHookCallback)
@@ -168,6 +166,8 @@ func (s *Server) Run(args []string) error {
 
 	s.parseConfig(args)
 
+	s.signalHandler()
+
 	if err := s.mapTestSuites(); err != nil {
 		return err
 	}
@@ -176,17 +176,18 @@ func (s *Server) Run(args []string) error {
 		s.printTestSuites()
 	}
 
-	if err := s.hooks.init(); err != nil {
-		return fmt.Errorf("init hooks: %w", err)
-	}
+	s.cron = cron.New(cron.WithSeconds())
+	s.cron.Start()
 
-	s.signalHandler()
-
-	storage, err := storage.NewBadgerStorage(s.config.DatabaseFilePath, s.log)
+	storage, err := storage.NewBadgerStorage(s.config.DatabaseFilePath, s.config.RunTTL, s.cron, s.log)
 	if err != nil {
 		return fmt.Errorf("init badger storage: %w", err)
 	}
 	s.storage = storage
+
+	if err := s.hooks.init(); err != nil {
+		return fmt.Errorf("init hooks: %w", err)
+	}
 
 	if err := s.startSchedules(); err != nil {
 		return fmt.Errorf("start schedules: %w", err)
@@ -223,6 +224,8 @@ func (s *Server) parseConfig(args []string) {
 		os.Exit(-1)
 	}
 
+	s.config.Instance = program
+
 	err = p.Parse(args)
 	switch {
 	case err == arg.ErrHelp:
@@ -244,7 +247,6 @@ func (h *Server) ServerPort() int {
 
 // WaitForStartup blocks until the server has started up.
 func (s *Server) WaitForStartup() {
-	// TODO: maybe respond with the error if startup fails?
 	<-s.started
 }
 
@@ -342,7 +344,6 @@ func (s *Server) printTestSuites() {
 }
 
 func (s *Server) startSchedules() error {
-	s.cron = cron.New(cron.WithSeconds())
 
 	for i := range s.schedules {
 		schedule := s.schedules[i]
@@ -373,8 +374,6 @@ func (s *Server) startSchedules() error {
 		s.schedules[i].EntryID = entryID
 	}
 
-	s.cron.Start()
-
 	return nil
 }
 
@@ -395,7 +394,6 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 	}
 
 	tsr := model.TestSuiteRun{
-		// TODO lock test suite and fetch latest id from storage.
 		SuiteName:   ts.Name,
 		TestResults: []model.TestRun{},
 		Result:      model.ResultPending,
@@ -438,7 +436,7 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 	go s.runTestSuite(ts, tsr)
 
 	// return a copy otherwise we might get a data race when marshalling the testresults
-	// and running the tests
+	// for http response body and running the tests at the same time.
 	return tsrCopy, nil
 }
 
@@ -471,7 +469,7 @@ func (s *Server) runTestSuite(
 
 	tsr.Start = time.Now()
 
-	testSuitesRunning := metric.TestSuitesRunning.WithLabelValues(suite.Namespace, suite.Name)
+	testSuitesRunning := metric.TestSuitesRunning.WithLabelValues(s.config.Instance, suite.Namespace, suite.Name)
 	testSuitesRunning.Inc()
 	defer func() {
 		testSuitesRunning.Dec()
@@ -530,7 +528,6 @@ func (s *Server) runTestSuite(
 	tsr.DurationInMS = tsr.TestSuiteDuration()
 	tsr.Flaky = tsr.IsFlaky()
 
-	// TODO: Add the plugin context to the `testRunFinishedEvent`
 	s.hooks.notifyTestSuiteFinished(suite, tsr)
 
 	if err := s.storage.UpdateTestSuiteRun(ctx, tsr); err != nil {
@@ -540,7 +537,7 @@ func (s *Server) runTestSuite(
 	if tsr.Result != model.ResultPending {
 		s.hooks.notifyTestSuiteFinishedAsync(suite, tsr)
 
-		metric.TestSuitesRun.WithLabelValues(suite.Namespace, suite.Name, string(tsr.Result)).Inc()
+		metric.TestSuitesRun.WithLabelValues(s.config.Instance, suite.Namespace, suite.Name, string(tsr.Result)).Inc()
 	}
 }
 
@@ -568,7 +565,7 @@ func (s *Server) runTest(
 
 		result := t.Result()
 
-		metric.TestRunsTotal.WithLabelValues(suite.Namespace, suite.Name, string(result)).Inc()
+		metric.TestRunsTotal.WithLabelValues(s.config.Instance, suite.Namespace, suite.Name, string(result)).Inc()
 
 		s.hooks.notifyTestFinished(suite, testSuiteRun, testRun.Name, t.runtimeContext)
 

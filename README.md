@@ -43,12 +43,14 @@ For examples see [./cmd/example-server-bootstrap/main.go] and [./internal/packag
 
 - [ ] (Feature) Write a tool "transformcli" that uses go:generate and go/ast to transform handoff tests and suites to standard go tests (suite -> test with subtests + init and cleanup)
 - [ ] (Feature) Automatic test run retries/backoff on failures
-- [ ] (Feature) Configurable test run retention policy
-- [ ] (Feature) Flaky test detection + metric
+- [ ] (Feature) CLI program to run tests and wait for results
+- [ ] (Feature) Opt-in test timeouts through t.Context and / or providing wrapped handoff functions ( e.g. http clients) to be used in tests  that implement test timeouts
+- [ ] (Feature) Flaky test metric
 - [ ] (Feature) Add test-suite labels
-- [ ] (Feature) Test suite namespaces
+- [ ] (Feature) Add an option to the helm chart to support remote debugging through dlv
+- [ ] (Feature) Image for [helm chart](https://helm.sh/docs/topics/chart_tests/) tests for automated helm release rollbacks
+- [ ] (Feature) Test suite namespaces for grouping
 - [ ] (Feature) Asynchronous plugin hooks with callbacks for slow operations (e.g. http calls)
-- [ ] (Technical) Comprehensive test suite
 - [ ] (Plugin) Pagerduty - triger alerts/incidents on failed e2e tests
 - [ ] (Plugin) Slack - send messages to slack channels when tests pass / fail
 - [ ] (Plugin) Github - pr status checks
@@ -56,36 +58,33 @@ For examples see [./cmd/example-server-bootstrap/main.go] and [./internal/packag
 - [x] (Technical) Server configuration through either ENV vars or cli flags
 - [x] (Technical) Continue test runs on service restart
 - [x] (Technical) Graceful server shutdown
+- [x] (Technical) Well tested
 - [x] (Technical) Registering of `TestSuite`s and `ScheduledRun`s via imported packages
-- [x] (Technical) SQLite Persistence layer
+- [x] (Technical) Persistence layer
 - [x] (Feature) Persist compressed test logs to save space
 - [x] (Feature) Soft test fails that don't fail the entire testsuite. This can be used to help with the chicken/egg problem when you add new tests that target a new service version that is not deployed yet.
 - [x] (Feature) Basic webui bundled in the service that shows test run results
+- [x] (Feature) Configurable test run retention policy (TTL)
 - [x] (Feature) Start test runs via POST requests
-- [x] (Feature) Test suite namespaces for grouping
 - [x] (Feature) Write test suites with multiple tests written in Go
 - [x] (Feature) Manual retrying of failed tests
 - [x] (Feature) Skip individual tests by calling t.Skip() within a test
 - [x] (Feature) Scheduled / recurring test runs (e.g. for soak tests)
 - [x] (Feature) Skip test subsets via regex filters passed into a test run
+- [x] (Feature) Flaky test detection
 - [x] (Feature) Support existing assertion libraries like stretch/testify
 - [x] (Feature) Prometheus /metrics endpoint that exposes test metrics
 - [x] (Feature) Basic support for plugins to hook into the test lifecycle
 
 ## Potential features
 
-- [ ] (Technical) Limit the number of concurrent test runs via a configuration option
-- [ ] (Technical) Websocket that streams test results (like test logs)
+- [ ] (Technical) Websocket that streams test results (like test logs) - this could be used by the cli tool to get live updates on running tests
 - [ ] (Technical) Authenticated HTTP requests through TLS client certificates
 - [ ] (Feature) Grafana service dashboard template
-- [ ] (Feature) Image for [helm chart](https://helm.sh/docs/topics/chart_tests/) tests for automated helm release rollbacks
-- [ ] (Feature) Server mode + cli mode
 - [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
 - [ ] (Feature) Output go test json report
-- [ ] (Feature) Create a helm chart that supports remote test debugging through dlv
 - [ ] (Feature) Support running tests in languages other than go
-- [ ] (Feature) k8s operator / CRDs to configure test runs & schedules
-- [ ] (Feature) Opt-in test timeouts through t.Context and / or providing wrapped handoff functions ( e.g. http clients) to be used in tests  that implement test timeouts
+- [ ] (Feature) k8s operator / CRDs to configure test runs & schedules (we probably don't need this)
 
 ## Open questions
 

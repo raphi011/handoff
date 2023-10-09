@@ -112,6 +112,8 @@ func (tsr TestSuiteRun) TestRunsByName(testName string) []TestRun {
 
 func (tsr TestSuiteRun) IsFlaky() bool {
 	for _, r := range tsr.TestResults {
+		// todo: make sure >= 2 attempts have failed
+		// (one could have been skipped as well)
 		if r.Attempt > 1 {
 			return true
 		}

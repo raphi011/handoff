@@ -11,7 +11,7 @@ import (
 )
 
 func TestBadgerdb(t *testing.T) {
-	db, err := storage.NewBadgerStorage("", slog.Default())
+	db, err := storage.NewBadgerStorage("", 0, nil, slog.Default())
 	assert.NoError(t, err)
 
 	ctx, err := db.StartTransaction(context.Background())
