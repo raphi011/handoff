@@ -73,7 +73,7 @@ func (b *BadgerStorage) RollbackTransaction(ctx context.Context) {
 }
 
 func testSuiteRunKey(suiteName string, id int) []byte {
-	return []byte(fmt.Sprintf("%s-%v", suiteName, id))
+	return []byte(fmt.Sprintf("suite-%s-%v", suiteName, id))
 }
 
 func (b *BadgerStorage) getSequence(key []byte) (*badger.Sequence, error) {
@@ -120,7 +120,30 @@ func (b *BadgerStorage) InsertTestSuiteRun(ctx context.Context, tsr model.TestSu
 		t.SuiteRunID = id
 	}
 
-	return id, b.UpdateTestSuiteRun(ctx, tsr)
+	err = b.runTx(ctx, func(t *badger.Txn) error {
+		data, err := json.Marshal(tsr)
+		if err != nil {
+			return fmt.Errorf("marshalling test suite run: %w", err)
+		}
+
+		key := testSuiteRunKey(tsr.SuiteName, tsr.ID)
+
+		err = t.Set(key, data)
+		if err != nil {
+			return fmt.Errorf("inserting test suite run: %w", err)
+		}
+
+		pendingKey := append([]byte("pending-"), key...)
+
+		err = t.Set(pendingKey, nil)
+		if err != nil {
+			return fmt.Errorf("add pending key: %w", err)
+		}
+
+		return nil
+	})
+
+	return id, err
 }
 
 func (b *BadgerStorage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSuiteRun) error {
@@ -130,9 +153,20 @@ func (b *BadgerStorage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSu
 			return fmt.Errorf("marshalling test suite run: %w", err)
 		}
 
-		err = t.Set(testSuiteRunKey(tsr.SuiteName, tsr.ID), data)
+		key := testSuiteRunKey(tsr.SuiteName, tsr.ID)
+
+		err = t.Set(key, data)
 		if err != nil {
 			return fmt.Errorf("inserting test suite run: %w", err)
+		}
+
+		pendingKey := append([]byte("pending-"), key...)
+
+		if tsr.Result != model.ResultPending {
+			err = t.Delete(pendingKey)
+			if err != nil {
+				return fmt.Errorf("deleting pending key: %w", err)
+			}
 		}
 
 		return nil
@@ -145,27 +179,67 @@ func (b *BadgerStorage) LoadTestSuiteRun(ctx context.Context, suiteName string, 
 	var tsr model.TestSuiteRun
 
 	err := b.runTx(ctx, func(txn *badger.Txn) error {
-		item, err := txn.Get(testSuiteRunKey(suiteName, runID))
-		if err != nil {
-			return fmt.Errorf("loading test suite run: %w", err)
-		}
-
-		err = item.Value(func(d []byte) error {
-			return json.Unmarshal(d, &tsr)
-		})
-		if err != nil {
-			return fmt.Errorf("unmarshaling test suite run: %w", err)
-		}
-
-		return nil
+		var err error
+		tsr, err = loadTestSuiteRun(txn, testSuiteRunKey(suiteName, runID))
+		return err
 	})
 
 	return tsr, err
 }
 
+func loadTestSuiteRun(txn *badger.Txn, key []byte) (model.TestSuiteRun, error) {
+	var tsr model.TestSuiteRun
+
+	item, err := txn.Get(key)
+	if err != nil {
+		return tsr, fmt.Errorf("loading test suite run: %w", err)
+	}
+
+	err = item.Value(func(d []byte) error {
+		return json.Unmarshal(d, &tsr)
+	})
+	if err != nil {
+		return tsr, fmt.Errorf("unmarshaling test suite run: %w", err)
+	}
+
+	return tsr, nil
+}
+
 func (b *BadgerStorage) LoadPendingTestSuiteRuns(ctx context.Context) ([]model.TestSuiteRun, error) {
-	// todo
-	return []model.TestSuiteRun{}, nil
+	pending := []model.TestSuiteRun{}
+
+	err := b.runTx(ctx, func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		prefix := []byte("pending-")
+
+		keys := []string{}
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			k := string(item.Key())
+
+			suiteKey := k[len("pending-"):]
+
+			keys = append(keys, suiteKey)
+		}
+
+		for _, suiteKey := range keys {
+			tsr, err := loadTestSuiteRun(txn, []byte(suiteKey))
+			if err != nil {
+				return err
+			}
+			pending = append(pending, tsr)
+		}
+
+		return nil
+	})
+
+	return pending, err
 }
 
 func (b *BadgerStorage) LoadTestSuiteRunsByName(ctx context.Context, suiteName string) ([]model.TestSuiteRun, error) {
