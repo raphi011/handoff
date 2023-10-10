@@ -188,13 +188,13 @@ func (s *Server) writeResponse(w http.ResponseWriter, r *http.Request, status in
 
 		switch t := body.(type) {
 		case model.TestRun:
-			err = html.RenderTestRun(t, w)
+			err = html.RenderTestRun(t).Render(r.Context(), w)
 		case model.TestSuiteRun:
-			err = html.RenderTestSuiteRun(t, w)
+			err = html.RenderTestSuiteRun(t).Render(r.Context(), w)
 		case []model.TestSuiteRun:
-			err = html.RenderTestSuiteRuns(t, w)
+			err = html.RenderTestSuiteRuns(t).Render(r.Context(), w)
 		case []model.TestSuite:
-			err = html.RenderTestSuites(t, w)
+			err = html.RenderTestSuites(t).Render(r.Context(), w)
 		default:
 			return fmt.Errorf("no template available for type %v", t)
 		}
