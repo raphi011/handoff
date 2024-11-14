@@ -3,6 +3,7 @@ package handoff
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/raphi011/handoff/internal/model"
@@ -25,7 +26,7 @@ type TestSuiteFinishedListener interface {
 
 type AsyncTestSuiteFinishedListener interface {
 	Hook
-	TestSuiteFinishedAsync(suite model.TestSuite, run model.TestSuiteRun, callback AsyncHookCallback)
+	TestSuiteFinishedAsync(suite model.TestSuite, run model.TestSuiteRun, callback func(context map[string]any))
 }
 
 // AsyncHookCallback allows async hooks to add additional context
@@ -47,11 +48,13 @@ type hookManager struct {
 	asyncCallback asyncHookCallback
 
 	asyncHooksRunning sync.WaitGroup
+
+	log *slog.Logger
 }
 
 type asyncHookCallback func(p Hook, context map[string]any)
 
-func newHookManager(hookCallback asyncHookCallback) *hookManager {
+func newHookManager(hookCallback asyncHookCallback, log *slog.Logger) *hookManager {
 	return &hookManager{
 		all:                    []Hook{},
 		testFinished:           []TestFinishedListener{},
@@ -60,10 +63,14 @@ func newHookManager(hookCallback asyncHookCallback) *hookManager {
 		testSuiteFinishedAsync: []AsyncTestSuiteFinishedListener{},
 
 		asyncCallback: hookCallback,
+		log:           log,
 	}
 }
 
 func (s *hookManager) init() error {
+	// for testing purposes
+	// s.all = append(s.all, hook.NewSlackHook("", "", s.log))
+
 	for _, p := range s.all {
 		if err := p.Init(); err != nil {
 			return fmt.Errorf("initiating hook %q: %w", p.Name(), err)
@@ -77,6 +84,10 @@ func (s *hookManager) init() error {
 		}
 		if l, ok := p.(TestSuiteFinishedListener); ok {
 			s.testSuiteFinished = append(s.testSuiteFinished, l)
+			registeredHook = true
+		}
+		if l, ok := p.(AsyncTestSuiteFinishedListener); ok {
+			s.testSuiteFinishedAsync = append(s.testSuiteFinishedAsync, l)
 			registeredHook = true
 		}
 

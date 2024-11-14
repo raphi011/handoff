@@ -150,11 +150,6 @@ func TestShutdownSucceeds(t *testing.T) {
 				Sleep(2 * time.Second),
 			},
 		}},
-		[]handoff.ScheduledRun{
-			{
-				TestSuiteName: "success",
-				Schedule:      "@every 1.5s",
-			}},
 		[]string{"handoff-test", "-p", "0", "-d", ""},
 	)
 
@@ -177,13 +172,7 @@ func TestScheduledRunWithTestFilter(t *testing.T) {
 		Tests: []model.TestFunc{Success, LogAttempt},
 	}}
 
-	scheduledRuns := []handoff.ScheduledRun{{
-		TestSuiteName: suiteName,
-		Schedule:      "@every 1.5s",
-		TestFilter:    regexp.MustCompile(filteredTestName),
-	}}
-
-	i := handoffInstance(suites, scheduledRuns, []string{"handoff-test", "-p", "0", "-d", ""})
+	i := handoffInstance(suites, []string{"handoff-test", "-p", "0", "-d", ""})
 
 	// make sure the scheduled run has started
 	time.Sleep(2 * time.Second)

@@ -33,6 +33,31 @@ import _ "github.com/my-org/my-service/tests"
 
 For examples see [./cmd/example-server-bootstrap/main.go] and [./internal/packagetestexample].
 
+## Build
+
+```sh
+templ generate
+go build ./cmd/example-server-bootstrap/
+```
+
+## Run
+
+```sh
+./example-server-bootstrap
+```
+
+## Web
+
+If your server is running you can open your browser to e.g. `http://localhost:1337/suites`.
+
+This will show you all available test suites.
+
+To create a new test run you can use the post request in `./requests.http`
+
+```sh
+httpyac requests.http
+```
+
 ## Test best practices
 
 * Pass in the test context for longer running operations and check if it was cancelled.
@@ -45,7 +70,6 @@ For examples see [./cmd/example-server-bootstrap/main.go] and [./internal/packag
 - [ ] (Feature) Automatic test run retries/backoff on failures
 - [ ] (Feature) CLI program to run tests and wait for results
 - [ ] (Feature) Opt-in test timeouts through t.Context and / or providing wrapped handoff functions ( e.g. http clients) to be used in tests  that implement test timeouts
-- [ ] (Feature) Flaky test metric
 - [ ] (Feature) Add test-suite labels
 - [ ] (Feature) Add an option to the helm chart to support remote debugging through dlv
 - [ ] (Feature) Image for [helm chart](https://helm.sh/docs/topics/chart_tests/) tests for automated helm release rollbacks
@@ -71,7 +95,7 @@ For examples see [./cmd/example-server-bootstrap/main.go] and [./internal/packag
 - [x] (Feature) Skip individual tests by calling t.Skip() within a test
 - [x] (Feature) Scheduled / recurring test runs (e.g. for soak tests)
 - [x] (Feature) Skip test subsets via regex filters passed into a test run
-- [x] (Feature) Flaky test detection
+- [x] (Feature) Flaky test detection + metric label
 - [x] (Feature) Support existing assertion libraries like stretch/testify
 - [x] (Feature) Prometheus /metrics endpoint that exposes test metrics
 - [x] (Feature) Basic support for plugins to hook into the test lifecycle

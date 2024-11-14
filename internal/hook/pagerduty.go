@@ -1,4 +1,4 @@
-package plugin
+package hook
 
 // PagerDutyHook supports creating and resolving incidents when
 // testsuites fail.

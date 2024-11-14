@@ -6,7 +6,10 @@ package model
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
 type TestSuiteRun struct {
@@ -40,6 +43,21 @@ type TestSuiteRun struct {
 	TestResults []TestRun `json:"testResults"`
 }
 
+type ScheduledRun struct {
+	// Name is the name of the schedule.
+	Name string
+	// TestSuiteName is the name of the test suite to be run.
+	TestSuiteName string
+	// Schedule defines how often a run is scheduled. For the format see
+	// https://pkg.go.dev/github.com/robfig/cron#hdr-CRON_Expression_Format
+	Schedule string
+	// TestFilter allows enabling/filtering only certain tests of a testsuite to be run
+	TestFilter *regexp.Regexp
+
+	// EntryID identifies the cronjob
+	EntryID cron.EntryID
+}
+
 type RunParams struct {
 	// TriggeredBy denotes the origin of the test run, e.g. scheduled or via http call.
 	TriggeredBy string
@@ -71,7 +89,7 @@ func (t TestSuiteRun) ShouldRetry(tr TestRun) bool {
 func (tsr TestSuiteRun) ResultFromTestResults() Result {
 	result := ResultPassed
 
-	for _, r := range tsr.LatestTestAttempts() {
+	for _, r := range tsr.latestTestAttempts() {
 		if r.Result == ResultPending {
 			return ResultPending
 		}
@@ -84,7 +102,21 @@ func (tsr TestSuiteRun) ResultFromTestResults() Result {
 	return result
 }
 
-func (tsr TestSuiteRun) LatestTestAttempts() map[string]TestRun {
+func (tsr TestSuiteRun) LatestTestAttempts() []TestRun {
+	var runs []TestRun
+
+	for _, tr := range tsr.latestTestAttempts() {
+		runs = append(runs, tr)
+	}
+
+	sort.Slice(runs, func(x, y int) bool {
+		return runs[x].Name < runs[y].Name
+	})
+
+	return runs
+}
+
+func (tsr TestSuiteRun) latestTestAttempts() map[string]TestRun {
 	latestAttempts := map[string]TestRun{}
 
 	for i := range tsr.TestResults {
@@ -137,7 +169,7 @@ func (tsr TestSuiteRun) PendingTests() []*TestRun {
 func (tsr TestSuiteRun) TestSuiteDuration() int64 {
 	duration := int64(0)
 
-	for _, r := range tsr.LatestTestAttempts() {
+	for _, r := range tsr.latestTestAttempts() {
 		duration += r.DurationInMS
 	}
 

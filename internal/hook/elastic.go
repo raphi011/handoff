@@ -1,8 +1,7 @@
-package plugin
+package hook
 
 import (
 	"github.com/elastic/go-elasticsearch/v8"
-	"github.com/raphi011/handoff"
 	"github.com/raphi011/handoff/internal/model"
 )
 
@@ -31,7 +30,7 @@ func (p *ElasticSearchHook) TestFinished(
 	suite model.TestSuite,
 	run model.TestSuiteRun,
 	testName string,
-	runContext handoff.TestContext) {
+	runContext map[string]any) {
 	p.fetchLogsByCorrelationID(runContext)
 }
 

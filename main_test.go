@@ -25,7 +25,7 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	te = handoffInstance(defaultTestSuites, nil, []string{"handoff-test", "-p", "0", "-d", ""})
+	te = handoffInstance(defaultTestSuites, []string{"handoff-test", "-p", "0", "-d", ""})
 
 	code := m.Run()
 
@@ -143,17 +143,12 @@ var defaultTestSuites = []handoff.TestSuite{
 
 func handoffInstance(
 	suites []handoff.TestSuite,
-	schedules []handoff.ScheduledRun,
 	args []string,
 ) *instance {
 	var options []handoff.Option
 
 	for _, ts := range suites {
 		options = append(options, handoff.WithTestSuite(ts))
-	}
-
-	for _, s := range schedules {
-		options = append(options, handoff.WithScheduledRun(s))
 	}
 
 	h := handoff.New(options...)

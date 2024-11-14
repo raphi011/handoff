@@ -1,0 +1,5 @@
+@url=http://localhost:1337
+@ts=my-app
+
+
+POST {{url}}/suites/{{ts}}/runs
