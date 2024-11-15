@@ -3,6 +3,8 @@ example
 .DS_STORE
 
 example-server-bootstrap
-*.db
-db
 example
+
+
+*_templ.go
+handoff.db

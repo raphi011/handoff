@@ -4,6 +4,7 @@ import (
    "fmt"
 
    "github.com/raphi011/handoff/internal/model"
+   "github.com/raphi011/handoff/internal/html/component"
 )
 
 templ RenderTestRun(tr model.TestRun) {
@@ -30,29 +31,8 @@ templ RenderTestSuiteRun(tsr model.TestSuiteRun) {
 		<h2>{ tsr.SuiteName }</h2>
 		<p>Started at { tsr.Start.Format("02.01 15:04:05") }, took { fmt.Sprintf("%d", tsr.DurationInMS) }ms to finish.</p>
 		<p>Is flaky: {  fmt.Sprintf("%t", tsr.Flaky) }</p>
-		<table>
-			<tr>
-				<th>Name</th>
-				<th>Passed</th>
-				<th style="text-align: right">Duration</th>
-			</tr>
-			for _, tr := range tsr.TestResults {
-				<tr>
-					<td><a href={ templ.URL(fmt.Sprintf("/suites/%s/runs/%d/test/%s", tr.SuiteName, tsr.ID, tr.Name)) }>{ tr.Name }</a></td>
-					<td>
-						if tr.Result == "passed" {
-							✅
-						} else {
-							❌
-						}
-						if tr.SoftFailure {
-							(soft failure)
-						}
-					</td>
-					<td style="text-align: right">{ fmt.Sprintf("%dms", tr.DurationInMS) }</td>
-				</tr>
-			}
-		</table>
+
+		@component.TestRunTable(tsr)
 	}
 }
 
@@ -86,7 +66,8 @@ templ body() {
 	<!DOCTYPE html>
 	<html>
 		<head>
-		    <meta charset="UTF-8">
+			<meta charset="UTF-8"/>
+			<script src="https://cdn.tailwindcss.com"></script>
 		</head>
 		<body>
 			<h1>Handoff</h1>
