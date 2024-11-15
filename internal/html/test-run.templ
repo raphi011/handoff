@@ -31,7 +31,6 @@ templ RenderTestSuiteRun(tsr model.TestSuiteRun) {
 		<h2>{ tsr.SuiteName }</h2>
 		<p>Started at { tsr.Start.Format("02.01 15:04:05") }, took { fmt.Sprintf("%d", tsr.DurationInMS) }ms to finish.</p>
 		<p>Is flaky: {  fmt.Sprintf("%t", tsr.Flaky) }</p>
-
 		@component.TestRunTable(tsr)
 	}
 }
@@ -60,18 +59,4 @@ templ RenderTestSuites(suites []model.TestSuite) {
 			}
 		</ul>
 	}
-}
-
-templ body() {
-	<!DOCTYPE html>
-	<html>
-		<head>
-			<meta charset="UTF-8"/>
-			<script src="https://cdn.tailwindcss.com"></script>
-		</head>
-		<body>
-			<h1>Handoff</h1>
-			{ children... }
-		</body>
-	</html>
 }
