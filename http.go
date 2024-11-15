@@ -178,18 +178,18 @@ func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request, p httpro
 }
 
 func filterParam(ts model.TestSuite, r *http.Request) (*regexp.Regexp, error) {
-	var filterRegex *regexp.Regexp
-
 	filter := r.URL.Query().Get("filter")
-	if filter != "" {
-		filterRegex, err := regexp.Compile(filter)
-		if err != nil {
-			return nil, malformedRequestError{param: "filter", reason: "invalid regex"}
-		}
+	if filter == "" {
+		return nil, nil
+	}
 
-		if len(ts.FilterTests(filterRegex)) == 0 {
-			return nil, malformedRequestError{param: "filter", reason: "no tests match the given filter"}
-		}
+	filterRegex, err := regexp.Compile(filter)
+	if err != nil {
+		return nil, malformedRequestError{param: "filter", reason: "invalid regex"}
+	}
+
+	if len(ts.FilterTests(filterRegex)) == 0 {
+		return nil, malformedRequestError{param: "filter", reason: "no tests match the given filter"}
 	}
 
 	return filterRegex, nil

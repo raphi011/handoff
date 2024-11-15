@@ -50,6 +50,13 @@ func TestDeleteScheduledRun(t *testing.T) {
 	db, err := storage.NewBadgerStorage("", 0, nil, slog.Default())
 	assert.NoError(t, err)
 
-	err = db.DeleteScheduledRun(context.Background(), "404")
+	ctx := context.Background()
+
+	assert.NoError(t, db.InsertScheduledRun(ctx, model.ScheduledRun{
+		Name:          "sr",
+		TestSuiteName: "sn",
+	}))
+
+	err = db.DeleteScheduledRun(ctx, "sr")
 	assert.NoError(t, err)
 }
