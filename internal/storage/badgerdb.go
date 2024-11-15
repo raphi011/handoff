@@ -150,8 +150,10 @@ func (b *BadgerStorage) InsertTestSuiteRun(ctx context.Context, tsr model.TestSu
 		}
 
 		key := testSuiteRunKey(tsr.SuiteName, tsr.ID)
+		e := badger.NewEntry(key, data)
+		// TODO: maybe set run status as `UserMeta`?
 
-		err = t.SetEntry(badger.NewEntry(key, data))
+		err = t.SetEntry(e)
 		if err != nil {
 			return fmt.Errorf("inserting test suite run: %w", err)
 		}
@@ -298,4 +300,48 @@ func (b *BadgerStorage) LoadTestSuiteRunsByName(ctx context.Context, suiteName s
 	})
 
 	return runs, err
+}
+
+func scheduledRunKey(scheduleName string) []byte {
+	return []byte("schedule-" + scheduleName)
+}
+
+func (b *BadgerStorage) InsertScheduledRun(ctx context.Context, sr model.ScheduledRun) error {
+	err := b.runTx(ctx, true, func(t *badger.Txn) error {
+		data, err := json.Marshal(sr)
+		if err != nil {
+			return fmt.Errorf("marshalling scheduled run: %w", err)
+		}
+
+		key := scheduledRunKey(sr.Name)
+		e := badger.NewEntry(key, data)
+
+		err = t.SetEntry(e)
+		if err != nil {
+			return fmt.Errorf("inserting scheduled run: %w", err)
+		}
+
+		return nil
+	})
+
+	return err
+}
+
+func (b *BadgerStorage) DeleteScheduledRun(ctx context.Context, name string) error {
+	err := b.runTx(ctx, true, func(t *badger.Txn) error {
+		_, err := t.Get(scheduledRunKey(name))
+		if err == badger.ErrKeyNotFound {
+			return model.NotFoundError{}
+		} else if err != nil {
+			return err
+		}
+
+		return t.Delete(scheduledRunKey(name))
+	})
+
+	if err != nil {
+		return fmt.Errorf("deleting scheduled run: %w", err)
+	}
+
+	return nil
 }

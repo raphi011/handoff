@@ -46,6 +46,10 @@ func (s *Server) runHTTP() error {
 	router.GET("/suites/:suite-name/runs/:run-id", s.getTestSuiteRun)
 	router.GET("/suites/:suite-name/runs/:run-id/test/:test-name", s.getTestRunResult)
 
+	router.GET("/schedules", s.getSchedules)
+	router.POST("/schedules/:schedule-name", s.createSchedule)
+	router.DELETE("/schedules/:schedule-name", s.deleteSchedule)
+
 	s.httpServer = &http.Server{
 		Handler: router,
 		// TODO: set reasonable timeouts
@@ -93,31 +97,23 @@ func (s *Server) stopHTTP() chan error {
 }
 
 func (s *Server) startTestSuite(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	suite, err := s.loadTestSuite(r, p)
+	ts, err := s.loadTestSuite(r, p)
 	if err != nil {
 		s.httpError(w, err)
 		return
 	}
 
-	var filterRegex *regexp.Regexp
-	filter := r.URL.Query().Get("filter")
 	reference := r.URL.Query().Get("ref")
 
-	if filter != "" {
-		filterRegex, err = regexp.Compile(filter)
-		if err != nil {
-			s.httpError(w, malformedRequestError{param: "filter", reason: "invalid regex"})
-			return
-		}
-
-		if len(suite.FilterTests(filterRegex)) == 0 {
-			s.httpError(w, malformedRequestError{param: "filter", reason: "no tests match the given filter"})
-		}
+	filter, err := filterParam(ts, r)
+	if err != nil {
+		s.httpError(w, err)
+		return
 	}
 
-	tsr, err := s.startNewTestSuiteRun(suite, model.RunParams{
+	tsr, err := s.startNewTestSuiteRun(ts, model.RunParams{
 		TriggeredBy: "api",
-		TestFilter:  filterRegex,
+		TestFilter:  filter,
 		Reference:   reference,
 	})
 	if err != nil {
@@ -125,6 +121,78 @@ func (s *Server) startTestSuite(w http.ResponseWriter, r *http.Request, p httpro
 	}
 
 	s.writeResponse(w, r, http.StatusCreated, tsr)
+}
+
+func (s *Server) getSchedules(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	var schedules []model.ScheduledRun
+
+	schedules = append(schedules, s.readOnlySchedules...)
+
+	s.writeResponse(w, r, http.StatusOK, schedules)
+}
+
+func (s *Server) deleteSchedule(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	scheduleName := p.ByName("schedule-name")
+	if scheduleName == "" {
+		s.httpError(w, malformedRequestError{":schedule-name", "must provide a schedule name to delete"})
+		return
+	}
+
+	err := s.storage.DeleteScheduledRun(context.Background(), scheduleName)
+	if err != nil {
+		s.httpError(w, fmt.Errorf("failed to delete scheduled run: %w", err))
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	scheduleName := p.ByName("schedule-name")
+
+	ts, err := s.loadTestSuite(r, p)
+	if err != nil {
+		s.httpError(w, err)
+		return
+	}
+	schedule := r.Header.Get("schedule")
+	filter, err := filterParam(ts, r)
+	if err != nil {
+		s.httpError(w, err)
+		return
+	}
+
+	sr := model.ScheduledRun{
+		Name:          scheduleName,
+		TestSuiteName: ts.Name,
+		Schedule:      schedule,
+		TestFilter:    filter,
+	}
+
+	if _, err := s.startSchedule(sr, true); err != nil {
+		s.httpError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func filterParam(ts model.TestSuite, r *http.Request) (*regexp.Regexp, error) {
+	var filterRegex *regexp.Regexp
+
+	filter := r.URL.Query().Get("filter")
+	if filter != "" {
+		filterRegex, err := regexp.Compile(filter)
+		if err != nil {
+			return nil, malformedRequestError{param: "filter", reason: "invalid regex"}
+		}
+
+		if len(ts.FilterTests(filterRegex)) == 0 {
+			return nil, malformedRequestError{param: "filter", reason: "no tests match the given filter"}
+		}
+	}
+
+	return filterRegex, nil
 }
 
 func (s *Server) getTestSuites(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -175,7 +243,7 @@ func (s *Server) getTestSuiteRuns(w http.ResponseWriter, r *http.Request, p http
 	}
 
 	if err := s.writeResponse(w, r, http.StatusOK, testRuns); err != nil {
-		s.log.Warn("writing get test suite runs response: %v", err)
+		s.log.Warn("writing get test suite runs response", "error", err)
 	}
 }
 
@@ -189,6 +257,8 @@ func (s *Server) writeResponse(w http.ResponseWriter, r *http.Request, status in
 		switch t := body.(type) {
 		case model.TestRun:
 			err = html.RenderTestRun(t).Render(r.Context(), w)
+		case []model.ScheduledRun:
+			err = html.RenderSchedules(t).Render(r.Context(), w)
 		case model.TestSuiteRun:
 			err = html.RenderTestSuiteRun(t).Render(r.Context(), w)
 		case []model.TestSuiteRun:

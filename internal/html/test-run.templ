@@ -1,4 +1,4 @@
-package html 
+package html
 
 import (
    "fmt"
@@ -7,89 +7,90 @@ import (
 )
 
 templ RenderTestRun(tr model.TestRun) {
-   <!DOCTYPE html>
-	<html>
-		<head>
-			<meta charset="utf-8"/>
-		</head>
-		<body>
-			<h1>{  tr.Name }</h1>
-			<h2>Logs</h2>
-			<code>{ tr.Logs }</code>
-		</body>
-	</html>
+	@body() {
+		<h1>{  tr.Name }</h1>
+		<h2>Logs</h2>
+		<code>{ tr.Logs }</code>
+	}
+}
+
+templ RenderSchedules(schedules []model.ScheduledRun) {
+	@body() {
+		<h2>Scheduled runs</h2>
+		<ul>
+			for _, s := range schedules {
+				<li>{ s.Name }</li>
+			}
+		</ul>
+	}
 }
 
 templ RenderTestSuiteRun(tsr model.TestSuiteRun) {
-   <!DOCTYPE html>
-	<html>
-		<head>
-			<meta charset="utf-8"/>
-		</head>
-		<body>
-			<h1>{ tsr.SuiteName }</h1>
-			<p>Started at { tsr.Start.Format("02.01 15:04:05") }, took { fmt.Sprintf("%d", tsr.DurationInMS) }ms to finish.</p>
-			<p>Is flaky: {  fmt.Sprintf("%t", tsr.Flaky) }</p>
-			<table>
+	@body() {
+		<h2>{ tsr.SuiteName }</h2>
+		<p>Started at { tsr.Start.Format("02.01 15:04:05") }, took { fmt.Sprintf("%d", tsr.DurationInMS) }ms to finish.</p>
+		<p>Is flaky: {  fmt.Sprintf("%t", tsr.Flaky) }</p>
+		<table>
+			<tr>
+				<th>Name</th>
+				<th>Passed</th>
+				<th style="text-align: right">Duration</th>
+			</tr>
+			for _, tr := range tsr.TestResults {
 				<tr>
-					<th>Name</th>
-					<th>Passed</th>
-					<th style="text-align: right">Duration</th>
+					<td><a href={ templ.URL(fmt.Sprintf("/suites/%s/runs/%d/test/%s", tr.SuiteName, tsr.ID, tr.Name)) }>{ tr.Name }</a></td>
+					<td>
+						if tr.Result == "passed" {
+							✅
+						} else {
+							❌
+						}
+						if tr.SoftFailure {
+							(soft failure)
+						}
+					</td>
+					<td style="text-align: right">{ fmt.Sprintf("%dms", tr.DurationInMS) }</td>
 				</tr>
-				for _, tr := range tsr.TestResults {
-					<tr>
-						<td><a href={ templ.URL(fmt.Sprintf("/suites/%s/runs/%d/test/%s", tr.SuiteName, tsr.ID, tr.Name)) }>{ tr.Name }</a></td>
-						<td>
-							if tr.Result == "passed" {
-								✅
-							} else {
-								❌
-							}
-							if tr.SoftFailure {
-								"(soft failure)"
-							}
-						</td>
-						<td style="text-align: right">{ fmt.Sprintf("%dms", tr.DurationInMS) }</td>
-					</tr>
-				}
-			</table>
-		</body>
-	</html>
+			}
+		</table>
+	}
 }
 
 templ RenderTestSuiteRuns(runs []model.TestSuiteRun) {
-   <!DOCTYPE html>
-   <html>
-      <head>
-      </head>
-      <body>
-         <h1>Testruns</h1>
-         <ul>
-         for _, tsr := range runs {
-            <li>
-            <a href={ templ.URL(fmt.Sprintf("/suites/%s/runs/%d", tsr.SuiteName, tsr.ID)) }>{ tsr.SuiteName } (#{ fmt.Sprintf("%d", tsr.ID) }): { string(tsr.Result) }</a>
-         </li>
-         }
-         </ul>
-      </body>
-   </html>
+	@body() {
+		<h2>Testruns</h2>
+		<ul>
+			for _, tsr := range runs {
+				<li>
+					<a href={ templ.URL(fmt.Sprintf("/suites/%s/runs/%d", tsr.SuiteName, tsr.ID)) }>{ tsr.SuiteName } (#{ fmt.Sprintf("%d", tsr.ID) }): { string(tsr.Result) }</a>
+				</li>
+			}
+		</ul>
+	}
 }
 
 templ RenderTestSuites(suites []model.TestSuite) {
-   <!DOCTYPE html>
-   <html>
-      <head>
-      </head>
-      <body>
-         <h1>Test suites</h1>
-         <ul>
-         for _, ts := range suites {
-            <li>
-               <a href={ templ.URL(fmt.Sprintf("/suites/%s/runs", ts.Name)) }>{ ts.Name }</a>
-            </li>
-         }
-         </ul>
-      </body>
-   </html>
+	@body() {
+		<h2>Test suites</h2>
+		<ul>
+			for _, ts := range suites {
+				<li>
+					<a href={ templ.URL(fmt.Sprintf("/suites/%s/runs", ts.Name)) }>{ ts.Name }</a>
+				</li>
+			}
+		</ul>
+	}
 }
 
+templ body() {
+	<!DOCTYPE html>
+	<html>
+		<head>
+		    <meta charset="UTF-8">
+		</head>
+		<body>
+			<h1>Handoff</h1>
+			{ children... }
+		</body>
+	</html>
+}

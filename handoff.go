@@ -37,12 +37,13 @@ type Server struct {
 	// initialisation.
 	readOnlyTestSuites map[string]model.TestSuite
 
+	// a map of statically configured scheduled runs  that must not be modified after
+	// initialisation.
+	readOnlySchedules []model.ScheduledRun
+
 	// _userProvidedTestSuites is a list of all test suites provided
 	// by the user and will be mapped to `readOnlyTestSuites` on startup.
 	_userProvidedTestSuites []TestSuite
-
-	// scheduled runs configured by the user
-	schedules []ScheduledRun
 
 	// started will be closed when the service has started.
 	started chan any
@@ -118,23 +119,18 @@ type TestContext = model.TestContext
 
 type Option func(s *Server)
 
-var (
-	registeredSuites    []TestSuite
-	registeredSchedules []ScheduledRun
-)
+var registeredSuites []TestSuite
 
 // Register registers test suites and schedules for the handoff server. Has to be called
 // before `handoff.New()` to take effect.
-func Register(suites []TestSuite, schedules []ScheduledRun) {
+func RegisterSuites(suites []TestSuite) {
 	registeredSuites = append(registeredSuites, suites...)
-	registeredSchedules = append(registeredSchedules, schedules...)
 }
 
 // New configures a new Handoff instance.
 func New(opts ...Option) *Server {
 	s := &Server{
 		_userProvidedTestSuites: registeredSuites,
-		schedules:               registeredSchedules,
 		readOnlyTestSuites:      map[string]model.TestSuite{},
 		started:                 make(chan any),
 		hasShutdown:             make(chan error, 1),
@@ -142,7 +138,7 @@ func New(opts ...Option) *Server {
 		log:                     slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
 
-	s.hooks = newHookManager(s.asyncHookCallback)
+	s.hooks = newHookManager(s.asyncHookCallback, s.log)
 
 	for _, o := range opts {
 		o(s)
@@ -156,7 +152,7 @@ func New(opts ...Option) *Server {
 func (s *Server) Run(args []string) error {
 	startupStart := time.Now()
 
-	// we want to make sure that the test suite functions only
+	// We want to make sure that the test suite functions only
 	// log using the functions provided through the t struct
 	// and not 'pollute' the server logs, so we need to redirect
 	// the standard test loggers to /dev/null and use a custom one
@@ -189,7 +185,8 @@ func (s *Server) Run(args []string) error {
 		return fmt.Errorf("init hooks: %w", err)
 	}
 
-	if err := s.startSchedules(); err != nil {
+	// TODO: also start schedules from DB
+	if err := s.startStaticSchedules(); err != nil {
 		return fmt.Errorf("start schedules: %w", err)
 	}
 
@@ -343,38 +340,53 @@ func (s *Server) printTestSuites() {
 	os.Exit(0)
 }
 
-func (s *Server) startSchedules() error {
+func (s *Server) startStaticSchedules() error {
+	for _, sr := range s.readOnlySchedules {
 
-	for i := range s.schedules {
-		schedule := s.schedules[i]
-
-		ts, ok := s.readOnlyTestSuites[schedule.TestSuiteName]
-		if !ok {
-			return fmt.Errorf("test suite %q not found", schedule.TestSuiteName)
+		if _, err := s.startSchedule(sr, false); err != nil {
+			return err
 		}
-
-		if len(ts.FilterTests(schedule.TestFilter)) == 0 {
-			return errors.New("no tests match filter regex %s")
-		}
-
-		entryID, err := s.cron.AddFunc(schedule.Schedule, func() {
-			_, err := s.startNewTestSuiteRun(ts, model.RunParams{
-				TriggeredBy:     "scheduled",
-				TestFilter:      schedule.TestFilter,
-				MaxTestAttempts: ts.MaxTestAttempts,
-			})
-			if err != nil {
-				s.log.Error("starting new scheduled test suite run failed", "error", err, "test-suite", ts.Name)
-			}
-		})
-		if err != nil {
-			return fmt.Errorf("adding scheduled test suite run %q: %w", schedule.TestSuiteName, err)
-		}
-
-		s.schedules[i].EntryID = entryID
 	}
 
 	return nil
+}
+
+func (s *Server) startSchedule(sr model.ScheduledRun, persist bool) (cron.EntryID, error) {
+	ts, ok := s.readOnlyTestSuites[sr.TestSuiteName]
+	if !ok {
+		return -1, fmt.Errorf("test suite %q not found", sr.TestSuiteName)
+	}
+
+	if len(ts.FilterTests(sr.TestFilter)) == 0 {
+		return -1, errors.New("no tests match filter regex %s")
+	}
+
+	ctx := context.Background()
+
+	if persist {
+		err := s.storage.InsertScheduledRun(ctx, sr)
+		if err != nil {
+			return -1, fmt.Errorf("persisting schedule failed: %w", err)
+		}
+	}
+
+	entryID, err := s.cron.AddFunc(sr.Schedule, func() {
+		_, err := s.startNewTestSuiteRun(ts, model.RunParams{
+			TriggeredBy:     "scheduled",
+			TestFilter:      sr.TestFilter,
+			MaxTestAttempts: ts.MaxTestAttempts,
+		})
+		if err != nil {
+			s.log.Error("starting new scheduled test suite run failed", "error", err, "test-suite", ts.Name)
+		}
+	})
+	if err != nil {
+		// TODO: log this error?
+		_ = s.storage.DeleteScheduledRun(ctx, sr.Name)
+		return -1, fmt.Errorf("adding scheduled test suite run %q: %w", sr.TestSuiteName, err)
+	}
+
+	return entryID, nil
 }
 
 // startNewTestSuiteRun is used to start new test suite runs. It persists the
@@ -537,7 +549,7 @@ func (s *Server) runTestSuite(
 	if tsr.Result != model.ResultPending {
 		s.hooks.notifyTestSuiteFinishedAsync(suite, tsr)
 
-		metric.TestSuitesRun.WithLabelValues(s.config.Instance, suite.Namespace, suite.Name, string(tsr.Result)).Inc()
+		metric.TestSuiteFinished(s.config.Instance, suite, tsr)
 	}
 }
 

@@ -13,7 +13,7 @@ func init() {
 		},
 	}
 
-	handoff.Register(ts, nil)
+	handoff.RegisterSuites(ts)
 }
 
 func Succeed(t handoff.TB) {

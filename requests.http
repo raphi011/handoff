@@ -1,0 +1,12 @@
+@url=http://localhost:1337
+@ts=my-app
+
+### Create new test run
+
+POST {{url}}/suites/{{ts}}/runs
+
+### Get existing test run
+
+@runId = {{$input run id? $value: 1}}
+
+GET {{url}}/suites/{{ts}}/runs/{{runId}}
