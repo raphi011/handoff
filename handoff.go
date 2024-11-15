@@ -152,7 +152,7 @@ func New(opts ...Option) *Server {
 func (s *Server) Run(args []string) error {
 	startupStart := time.Now()
 
-	// we want to make sure that the test suite functions only
+	// We want to make sure that the test suite functions only
 	// log using the functions provided through the t struct
 	// and not 'pollute' the server logs, so we need to redirect
 	// the standard test loggers to /dev/null and use a custom one
