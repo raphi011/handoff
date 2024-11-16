@@ -86,6 +86,8 @@ type config struct {
 	// and immediately exit.
 	ListTestSuites bool `arg:"-l,--list" help:"list all configured test suites, schedules and hooks and exit" default:"false"`
 
+	JsonLogging bool `arg:"-j,--jsonlog" help:"enables json log format" default:"false"`
+
 	// Environment is e.g. the cluster/platform the tests are run on.
 	// This is added to metrics and the testrun information.
 	Environment string `arg:"-e,--env,env:HANDOFF_ENVIRONMENT" help:"the environment where the tests are run"`
@@ -135,7 +137,6 @@ func New(opts ...Option) *Server {
 		started:                 make(chan any),
 		hasShutdown:             make(chan error, 1),
 		shutdown:                make(chan any),
-		log:                     slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
 
 	s.hooks = newHookManager(s.asyncHookCallback, s.log)
@@ -161,6 +162,12 @@ func (s *Server) Run(args []string) error {
 	defer stdliblog.SetOutput(os.Stderr)
 
 	s.parseConfig(args)
+
+	if s.config.JsonLogging {
+		s.log = slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	} else {
+		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
+	}
 
 	s.signalHandler()
 
