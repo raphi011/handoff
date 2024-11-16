@@ -168,41 +168,36 @@ func RenderTestSuiteRun(tsr model.TestSuiteRun) templ.Component {
 				templBuffer = templ.GetBuffer()
 				defer templ.ReleaseBuffer(templBuffer)
 			}
-			_, err = templBuffer.WriteString("<h2>")
+			err = component.Heading(tsr.SuiteName).Render(ctx, templBuffer)
 			if err != nil {
 				return err
 			}
-			var var_12 string = tsr.SuiteName
-			_, err = templBuffer.WriteString(templ.EscapeString(var_12))
+			_, err = templBuffer.WriteString(" <p>")
 			if err != nil {
 				return err
 			}
-			_, err = templBuffer.WriteString("</h2> <p>")
+			var_12 := `Started at `
+			_, err = templBuffer.WriteString(var_12)
 			if err != nil {
 				return err
 			}
-			var_13 := `Started at `
-			_, err = templBuffer.WriteString(var_13)
+			var var_13 string = tsr.Start.Format("02.01 15:04:05")
+			_, err = templBuffer.WriteString(templ.EscapeString(var_13))
 			if err != nil {
 				return err
 			}
-			var var_14 string = tsr.Start.Format("02.01 15:04:05")
-			_, err = templBuffer.WriteString(templ.EscapeString(var_14))
+			var_14 := `, took `
+			_, err = templBuffer.WriteString(var_14)
 			if err != nil {
 				return err
 			}
-			var_15 := `, took `
-			_, err = templBuffer.WriteString(var_15)
+			var var_15 string = fmt.Sprintf("%d", tsr.DurationInMS)
+			_, err = templBuffer.WriteString(templ.EscapeString(var_15))
 			if err != nil {
 				return err
 			}
-			var var_16 string = fmt.Sprintf("%d", tsr.DurationInMS)
-			_, err = templBuffer.WriteString(templ.EscapeString(var_16))
-			if err != nil {
-				return err
-			}
-			var_17 := `ms to finish.`
-			_, err = templBuffer.WriteString(var_17)
+			var_16 := `ms to finish.`
+			_, err = templBuffer.WriteString(var_16)
 			if err != nil {
 				return err
 			}
@@ -210,17 +205,34 @@ func RenderTestSuiteRun(tsr model.TestSuiteRun) templ.Component {
 			if err != nil {
 				return err
 			}
-			var_18 := `Is flaky: `
-			_, err = templBuffer.WriteString(var_18)
+			var_17 := `Is flaky: `
+			_, err = templBuffer.WriteString(var_17)
 			if err != nil {
 				return err
 			}
-			var var_19 string = fmt.Sprintf("%t", tsr.Flaky)
-			_, err = templBuffer.WriteString(templ.EscapeString(var_19))
+			var var_18 string = fmt.Sprintf("%t", tsr.Flaky)
+			_, err = templBuffer.WriteString(templ.EscapeString(var_18))
 			if err != nil {
 				return err
 			}
 			_, err = templBuffer.WriteString("</p> ")
+			if err != nil {
+				return err
+			}
+			err = component.Stats().Render(ctx, templBuffer)
+			if err != nil {
+				return err
+			}
+			_, err = templBuffer.WriteString(" <h2 class=\"px-4 text-base/7 font-semibold text-white sm:px-6 lg:px-8\">")
+			if err != nil {
+				return err
+			}
+			var_19 := `Tests`
+			_, err = templBuffer.WriteString(var_19)
+			if err != nil {
+				return err
+			}
+			_, err = templBuffer.WriteString("</h2> ")
 			if err != nil {
 				return err
 			}

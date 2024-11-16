@@ -28,10 +28,12 @@ templ RenderSchedules(schedules []model.ScheduledRun) {
 
 templ RenderTestSuiteRun(tsr model.TestSuiteRun) {
 	@body() {
-		<h2>{ tsr.SuiteName }</h2>
-		<p>Started at { tsr.Start.Format("02.01 15:04:05") }, took { fmt.Sprintf("%d", tsr.DurationInMS) }ms to finish.</p>
-		<p>Is flaky: {  fmt.Sprintf("%t", tsr.Flaky) }</p>
-		@component.TestRunTable(tsr)
+	    @component.Heading(tsr.SuiteName)
+  		<p>Started at { tsr.Start.Format("02.01 15:04:05") }, took { fmt.Sprintf("%d", tsr.DurationInMS) }ms to finish.</p>
+  		<p>Is flaky: {  fmt.Sprintf("%t", tsr.Flaky) }</p>
+  		@component.Stats()
+  		<h2 class="px-4 text-base/7 font-semibold text-white sm:px-6 lg:px-8">Tests</h2>
+  		@component.TestRunTable(tsr)
 	}
 }
 
