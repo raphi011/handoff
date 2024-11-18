@@ -111,8 +111,14 @@ Once handoff is green in the dashboard you should be able to open up the ui here
 ## Planned features
 
 - [ ] (Feature) Write a tool "transformcli" that uses go:generate and go/ast to transform handoff tests and suites to standard go tests (suite -> test with subtests + init and cleanup)
+- [ ] (Feature) Users
+  - [ ] Teams (assigned to test suites)
+  - [ ] Favorite test suites (UI)
+  - [ ] authentication providers (LDAP, Oauth2, ...)
+- [ ] (Feature) Test Suite Metadata (desription in markdown, links to e.g. github, documentation, handbook, ...) shown in UI
 - [ ] (Feature) Automatic test run retries/backoff on failures
-- [ ] (Feature) CLI program to run tests and wait for results
+- [ ] (Feature) CLI program to run tests and wait for results, export results to json (via the server's http api)
+- [ ] (Feature) Dashboard UI that shows handoff statistics, running tests, resource usage (cpu, memory, active go routines...) etc
 - [ ] (Feature) Opt-in test timeouts through t.Context and / or providing wrapped handoff functions ( e.g. http clients) to be used in tests  that implement test timeouts
 - [ ] (Feature) Add test-suite labels
 - [ ] (Feature) Add an option to the helm chart to support remote debugging through dlv
@@ -123,6 +129,7 @@ Once handoff is green in the dashboard you should be able to open up the ui here
 - [ ] (Plugin) Slack - send messages to slack channels when tests pass / fail
 - [ ] (Plugin) Github - pr status checks
 - [ ] (Plugin) Prometheus / Loki / Tempo / ELK stack - find and fetch logs/traces/metrics that are created by tests (e.g. for easier debugging) - e.g. via correlation ids
+- [ ] (Technical) Idempotency in post requests via a key to avoid duplicate test runs
 - [x] (Technical) Server configuration through either ENV vars or cli flags
 - [x] (Technical) Continue test runs on service restart
 - [x] (Technical) Graceful server shutdown
