@@ -10,3 +10,6 @@ handoff.db
 
 # tmux startup script
 sup.sh
+
+# Temporary files
+/tmp/
