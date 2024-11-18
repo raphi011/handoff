@@ -108,6 +108,7 @@ type TestSuite struct {
 	// Namespace allows grouping of test suites, e.g. by team name.
 	Namespace       string
 	MaxTestAttempts int
+	Description     string
 	Setup           func() error
 	Teardown        func() error
 	Timeout         time.Duration
@@ -643,6 +644,7 @@ func (h *Server) mapTestSuites() error {
 			Namespace:       ts.Namespace,
 			MaxTestAttempts: ts.MaxTestAttempts,
 			Setup:           ts.Setup,
+			Description:     ts.Description,
 			Teardown:        ts.Teardown,
 			Tests:           make(map[string]model.TestFunc),
 		}
