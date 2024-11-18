@@ -22,6 +22,7 @@ type T struct {
 	cleanupFunc    func()
 	softFailure    bool
 	ctx            context.Context
+	spans          []*model.Span
 }
 
 func (t *T) Cleanup(c func()) {
@@ -54,6 +55,18 @@ func (t *T) Failed() bool {
 func (t *T) Fatal(args ...any) {
 	t.Error(args...)
 	panic(failTestErr{})
+}
+
+func (t *T) StartSpan(name string, kv ...any) *model.Span {
+	s, err := model.StartSpan(name, kv...)
+
+	if err != nil {
+		t.Fatalf("Error on StartSpan(): %v", err)
+	}
+
+	t.spans = append(t.spans, s)
+
+	return s
 }
 
 func (t *T) Fatalf(format string, args ...any) {

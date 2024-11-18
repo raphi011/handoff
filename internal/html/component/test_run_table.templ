@@ -20,19 +20,22 @@ templ TestRunTable(tsr model.TestSuiteRun) {
 					<tbody class="divide-y divide-gray-200 bg-white">
 						for _, tr := range tsr.TestResults {
 							<tr>
-
 								<td class="whitespace-nowrap py-2 pl-4 pr-3 text-sm text-gray-500 sm:pl-0 flex items-center justify-start">
-								if tr.Result == "passed" {
-    								<div class="flex-none rounded-full bg-green-400/10 p-1 text-green-400">
-    									<div class="size-1.5 rounded-full bg-current"></div>
-    								</div>
-    							} else {
-    								<div class="flex-none rounded-full bg-rose-400/10 p-1 text-rose-400">
-    									<div class="size-1.5 rounded-full bg-current"></div>
-    								</div>
-    							}
-           <a href={ templ.URL(fmt.Sprintf("/suites/%s/runs/%d/test/%s", tr.SuiteName, tsr.ID, tr.Name)) }>{ tr.Name }</a></td>
+									if tr.Result == "passed" {
+										<div class="flex-none rounded-full bg-green-400/10 p-1 text-green-400">
+											<div class="size-1.5 rounded-full bg-current"></div>
+										</div>
+									} else {
+										<div class="flex-none rounded-full bg-rose-400/10 p-1 text-rose-400">
+											<div class="size-1.5 rounded-full bg-current"></div>
+										</div>
+									}
+									<a href={ templ.URL(fmt.Sprintf("/suites/%s/runs/%d/test/%s", tr.SuiteName, tsr.ID, tr.Name)) }>{ tr.Name }</a>
+								</td>
 								<td class="whitespace-nowrap px-2 py-2 text-sm text-gray-900">{ fmt.Sprintf("%dms", tr.DurationInMS) }</td>
+								<td>
+									{ fmt.Sprintf("%v", tr.Spans) }
+								</td>
 							</tr>
 						}
 					</tbody>

@@ -605,6 +605,7 @@ func (s *Server) runTest(
 		testRun.SoftFailure = t.softFailure
 		testRun.Logs = logs.String()
 		testRun.Context = t.runtimeContext
+		testRun.Spans = t.spans
 
 		s.hooks.notifyTestFinishedAync(suite, testSuiteRun, testRun.Name, t.runtimeContext)
 

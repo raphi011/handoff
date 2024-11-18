@@ -4,6 +4,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -194,11 +195,60 @@ type TestRun struct {
 	End time.Time `json:"end"`
 	// DurationInMS is the duration of the test run in milliseconds (end-start).
 	DurationInMS int64 `json:"durationInMs"`
+	// Spans are timings that can be created within a test that give more information
+	// on how long certain parts of a test took.
+	Spans []*Span `json:"spans"`
 	// Context contains additional testrun specific information that is collected during and
 	// after a test run either by the test itself (`t.SetContext`) or via plugins. This can
 	// e.g. contain correlation ids or links to external services that may help debugging a test run
 	// (among other things).
 	Context TestContext `json:"context"`
+}
+
+type Span struct {
+	Start   time.Time   `json:"start"`
+	End     *time.Time  `json:"end"`
+	Name    string      `json:"name"`
+	Context TestContext `json:"context"`
+}
+
+func (s *Span) String() string {
+	t := s.End.Sub(s.Start).Milliseconds()
+	return fmt.Sprintf("%s (%d ms) %+v", s.Name, t, s.Context)
+}
+
+func StartSpan(name string, kv ...any) (*Span, error) {
+	context := make(map[string]any)
+
+	if len(kv)%2 != 0 {
+		return nil, errors.New("Uneven number of key-value context arguments")
+	}
+
+	for i := 0; i < len(kv); i += 2 {
+		key, ok := kv[i].(string)
+		if !ok {
+			return nil, fmt.Errorf("Key %v is not a string", key)
+		}
+
+		context[key] = kv[i+1]
+	}
+
+	return &Span{
+		Start:   time.Now(),
+		Name:    name,
+		Context: context,
+	}, nil
+}
+
+func (s *Span) EndSpan() {
+	if s.End == nil {
+		now := time.Now()
+		s.End = &now
+	}
+}
+
+func (s *Span) AddContext(key string, value any) {
+	s.Context[key] = value
 }
 
 func (tr TestRun) Copy() TestRun {
@@ -326,4 +376,5 @@ type TB interface {
 	/* Handoff specific */
 	SoftFailure()
 	Attempt() int
+	StartSpan(name string, kv ...any) *Span
 }

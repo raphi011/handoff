@@ -40,6 +40,7 @@ func main() {
 				Fatal,
 				Testify,
 				LoggingTest,
+				SpanTest,
 			},
 		}),
 	)
@@ -62,6 +63,16 @@ func SoftFailure(t handoff.TB) {
 	t.SoftFailure()
 
 	t.Fail()
+}
+
+func SpanTest(t handoff.TB) {
+	s := t.StartSpan("Http Request", "verb", "get", "endpoint", "localhost:8080/foo")
+	time.Sleep(300 * time.Millisecond)
+	s.EndSpan()
+
+	s = t.StartSpan("db call")
+	time.Sleep(50 * time.Millisecond)
+	s.EndSpan()
 }
 
 func LoggingTest(t handoff.TB) {
