@@ -5,6 +5,8 @@ example
 example-server-bootstrap
 example
 
-
 *_templ.go
 handoff.db
+
+# tmux startup script
+sup.sh
