@@ -85,6 +85,23 @@ To create a new test run you can use the post request in `./requests.http`
 httpyac requests.http
 ```
 
+## Local dev cluster
+
+Prerequisites:
+* Running Docker
+* Tilt + Kind installed and on the path
+
+Run
+
+```sh
+kind create cluster --config=kind-config.yaml
+tilt up
+```
+
+If you press `<space>` the tilt UI will open up.
+
+Once handoff is green in the dashboard you should be able to open up the ui here: http://localhost:1337/.
+
 ## Test best practices
 
 * Pass in the test context for longer running operations and check if it was cancelled.
