@@ -80,7 +80,6 @@ func (tsr TestSuiteRun) Copy() TestSuiteRun {
 	}
 
 	return tsrCopy
-
 }
 
 func (t TestSuiteRun) ShouldRetry(tr TestRun) bool {
@@ -294,10 +293,11 @@ type TestSuite struct {
 	// TestRetries is the amount of times a test is retried when failing.
 	MaxTestAttempts int
 	// Namespace allows grouping of test suites, e.g. by team name.
-	Namespace string
-	Setup     func() error
-	Teardown  func() error
-	Tests     map[string]TestFunc
+	Namespace   string
+	Setup       func() error
+	Description string
+	Teardown    func() error
+	Tests       map[string]TestFunc
 	// lock      *sync.Mutex
 }
 
