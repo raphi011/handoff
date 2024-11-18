@@ -1,6 +1,7 @@
 package handoff
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/raphi011/handoff/internal/html"
 	"github.com/raphi011/handoff/internal/model"
+	"github.com/yuin/goldmark"
 )
 
 type malformedRequestError struct {
@@ -262,7 +264,14 @@ func (s *Server) writeResponse(w http.ResponseWriter, r *http.Request, status in
 		case model.TestSuiteRun:
 			err = html.RenderTestSuiteRun(t).Render(r.Context(), w)
 		case []model.TestSuiteRun:
-			err = html.RenderTestSuiteRuns(t).Render(r.Context(), w)
+			var buf bytes.Buffer
+			if err := goldmark.Convert([]byte(`# Header
+           *bold* **italic**
+            `), &buf); err != nil {
+				panic(err)
+			}
+
+			err = html.RenderTestSuiteRuns(buf.String(), t).Render(r.Context(), w)
 		case []model.TestSuite:
 			err = html.RenderTestSuites(t).Render(r.Context(), w)
 		default:

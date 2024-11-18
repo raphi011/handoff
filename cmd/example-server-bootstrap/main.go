@@ -29,7 +29,13 @@ func main() {
 			},
 		}),
 		handoff.WithTestSuite(handoff.TestSuite{
-			Name:            "my-app",
+			Name: "my-app",
+			Description: `# My App
+
+This is a markdown description of my app.
+
+*This should be in bold*
+`,
 			MaxTestAttempts: 3,
 			Tests: []handoff.TestFunc{
 				Flaky,
