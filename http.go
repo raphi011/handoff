@@ -69,7 +69,7 @@ func (s *Server) runHTTP() error {
 		s.config.Port = l.Addr().(*net.TCPAddr).Port
 	}
 
-	s.log.Info("Starting http server", "port", s.config.Port)
+	s.log.Info("Starting http server", "host", s.config.HostIP, "port", s.config.Port)
 
 	go func() {
 		err = s.httpServer.Serve(l)

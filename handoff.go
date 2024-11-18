@@ -72,7 +72,7 @@ type config struct {
 	HostIP string `arg:"-h,--host,env:HANDOFF_HOST" help:"ip address the server should bind to" default:"localhost"`
 
 	// Port for the web api
-	Port int `arg:"-p,env:HANDOFF_PORT" help:"port used by the server (server mode only)" default:"1337"`
+	Port int `arg:"-p,env:HANDOFF_SERVER_PORT" help:"port used by the server (server mode only)" default:"1337"`
 
 	RunTTL time.Duration `arg:"-t,--ttl,env:HANDOFF_RUN_TTL" help:"test suite run retention TTL" default:"0"`
 
