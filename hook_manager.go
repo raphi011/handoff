@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/raphi011/handoff/internal/hook"
 	"github.com/raphi011/handoff/internal/model"
 )
 
@@ -69,7 +70,7 @@ func newHookManager(hookCallback asyncHookCallback, log *slog.Logger) *hookManag
 
 func (s *hookManager) init() error {
 	// for testing purposes
-	// s.all = append(s.all, hook.NewSlackHook("", "", s.log))
+	s.all = append(s.all, hook.NewSlackHook("", "", s.log))
 
 	for _, p := range s.all {
 		if err := p.Init(); err != nil {

@@ -139,8 +139,6 @@ func New(opts ...Option) *Server {
 		shutdown:                make(chan any),
 	}
 
-	s.hooks = newHookManager(s.asyncHookCallback, s.log)
-
 	for _, o := range opts {
 		o(s)
 	}
@@ -168,6 +166,8 @@ func (s *Server) Run(args []string) error {
 	} else {
 		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
+
+	s.hooks = newHookManager(s.asyncHookCallback, s.log)
 
 	s.signalHandler()
 
