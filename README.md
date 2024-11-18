@@ -40,8 +40,8 @@ Bootstrapping a server is simple, all you need to do is run this code:
 package main
 
 func main() {
-	h := handoff.New()
-	h.Run()
+ h := handoff.New()
+ h.Run()
 }
 ```
 
@@ -64,6 +64,7 @@ import _ "github.com/my-org/my-service/tests"
 For examples see [./cmd/example-server-bootstrap/main.go] and [./internal/packagetestexample].
 
 ## Build
+
 ```sh
 templ generate
 go build ./cmd/example-server-bootstrap/
@@ -74,6 +75,14 @@ go build ./cmd/example-server-bootstrap/
 
 ```sh
 ./example-server-bootstrap
+```
+
+## Live reload
+
+Instead of generating templ files and building the binary you can also run the example server with live reload:
+
+```sh
+air
 ```
 
 ## Web
@@ -91,6 +100,7 @@ httpyac requests.http
 ## Local dev cluster
 
 Prerequisites:
+
 * Running Docker
 * Tilt + Kind installed and on the path
 
@@ -103,7 +113,7 @@ tilt up
 
 If you press `<space>` the tilt UI will open up.
 
-Once handoff is green in the dashboard you should be able to open up the ui here: http://localhost:1337/.
+Once handoff is green in the dashboard you should be able to open up the ui here: <http://localhost:1337/>.
 
 ## Test best practices
 
@@ -160,21 +170,21 @@ Once handoff is green in the dashboard you should be able to open up the ui here
 
 ## Potential features
 
-- [ ] (Technical) Websocket that streams test results (like test logs) - this could be used by the cli tool to get live updates on running tests
-- [ ] (Technical) Authenticated HTTP requests through TLS client certificates
-- [ ] (Feature) Grafana service dashboard template
-- [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
-- [ ] (Feature) Output go test json report
-- [ ] (Feature) Support running tests in languages other than go
-- [ ] (Feature) k8s operator / CRDs to configure test runs & schedules (we probably don't need this)
+* [ ] (Technical) Websocket that streams test results (like test logs) - this could be used by the cli tool to get live updates on running tests
+* [ ] (Technical) Authenticated HTTP requests through TLS client certificates
+* [ ] (Feature) Grafana service dashboard template
+* [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
+* [ ] (Feature) Output go test json report
+* [ ] (Feature) Support running tests in languages other than go
+* [ ] (Feature) k8s operator / CRDs to configure test runs & schedules (we probably don't need this)
 
 ## Open questions
 
-- How to add test timeouts (it's impossible to externally stop goroutines running user provided functions)?
+* How to add test timeouts (it's impossible to externally stop goroutines running user provided functions)?
 
 ## Non goals
 
-- Implement a new assertion library. We aim to be compatible with existing ones.
+* Implement a new assertion library. We aim to be compatible with existing ones.
 
 ## Metrics
 
