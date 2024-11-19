@@ -38,6 +38,11 @@ type TestSuiteRun struct {
 	DurationInMS int64 `json:"durationInMs"`
 	// SetupLogs are the logs that are written during the setup phase.
 	SetupLogs string `json:"setupLogs"`
+	// InitiatedBy is a reference to the initiator of this run (e.g. github web hook)
+	InitiatedBy string `json:"initiatedBy"`
+
+	Reference      string `json:"reference"`
+	IdempotencyKey string `json:"idempotencyKey"`
 	// Environment is additional information on where the tests are run (e.g. cluster name).
 	Environment string `json:"environment"`
 	// TestResults contains the detailed test results of each test.
@@ -55,17 +60,20 @@ type ScheduledRun struct {
 	// TestFilter allows enabling/filtering only certain tests of a testsuite to be run
 	TestFilter *regexp.Regexp
 
+	// TODO: make it possible to stop scheduled runs after a # of runs or after a certain amount of time
+	StopAfter string
 	// EntryID identifies the cronjob
 	EntryID cron.EntryID
 }
 
 type RunParams struct {
-	// TriggeredBy denotes the origin of the test run, e.g. scheduled or via http call.
-	TriggeredBy string
+	// InitiatedBy e.g. jenkins, manual user initiated, scheduled run
+	InitiatedBy string
 	// Reference can be set when starting a new test suite run to identify
 	// a test run by a user provided value.
 	Reference       string
 	MaxTestAttempts int
+	IdempotencyKey  string
 	Timeout         time.Duration
 	// TestFilter filters out a subset of the tests and skips the remaining ones.
 	TestFilter *regexp.Regexp
@@ -293,8 +301,9 @@ type TestSuite struct {
 	// TestRetries is the amount of times a test is retried when failing.
 	MaxTestAttempts int
 	// Namespace allows grouping of test suites, e.g. by team name.
-	Namespace   string
-	Setup       func() error
+	Namespace string
+	Setup     func() error
+	// Description is used provided markdown text that describes the test suite.
 	Description string
 	Teardown    func() error
 	Tests       map[string]TestFunc

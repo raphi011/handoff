@@ -106,6 +106,8 @@ func (s *Server) startTestSuite(w http.ResponseWriter, r *http.Request, p httpro
 	}
 
 	reference := r.URL.Query().Get("ref")
+	initiatedBy := r.URL.Query().Get("initiatedby")
+	idempotencyKey := r.Header.Get("Idempotency-Key")
 
 	filter, err := filterParam(ts, r)
 	if err != nil {
@@ -114,9 +116,10 @@ func (s *Server) startTestSuite(w http.ResponseWriter, r *http.Request, p httpro
 	}
 
 	tsr, err := s.startNewTestSuiteRun(ts, model.RunParams{
-		TriggeredBy: "api",
-		TestFilter:  filter,
-		Reference:   reference,
+		InitiatedBy:    initiatedBy,
+		TestFilter:     filter,
+		Reference:      reference,
+		IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		s.httpError(w, err)

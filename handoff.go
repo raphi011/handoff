@@ -380,7 +380,7 @@ func (s *Server) startSchedule(sr model.ScheduledRun, persist bool) (cron.EntryI
 
 	entryID, err := s.cron.AddFunc(sr.Schedule, func() {
 		_, err := s.startNewTestSuiteRun(ts, model.RunParams{
-			TriggeredBy:     "scheduled",
+			InitiatedBy:     "scheduled-run",
 			TestFilter:      sr.TestFilter,
 			MaxTestAttempts: ts.MaxTestAttempts,
 		})
@@ -414,13 +414,16 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 	}
 
 	tsr := model.TestSuiteRun{
-		SuiteName:   ts.Name,
-		TestResults: []model.TestRun{},
-		Result:      model.ResultPending,
-		Params:      option,
-		Tests:       len(ts.Tests),
-		Scheduled:   time.Now(),
-		Environment: s.config.Environment,
+		SuiteName:      ts.Name,
+		TestResults:    []model.TestRun{},
+		Result:         model.ResultPending,
+		Params:         option,
+		Tests:          len(ts.Tests),
+		Scheduled:      time.Now(),
+		Environment:    s.config.Environment,
+		InitiatedBy:    option.InitiatedBy,
+		IdempotencyKey: option.IdempotencyKey,
+		Reference:      option.Reference,
 	}
 
 	for testName := range ts.Tests {
