@@ -34,7 +34,7 @@ func NewBadgerStorage(dbPath string,
 		return nil, fmt.Errorf("opening badger database: %w", err)
 	}
 
-	if gcCron != nil {
+	if gcCron != nil && dbPath != "" {
 		_, err = gcCron.AddFunc("@every 5m", func() {
 			if err := badgerDB.RunValueLogGC(0.5); err != nil && err != badger.ErrNoRewrite {
 				log.Warn("badger gc", "error", err)
