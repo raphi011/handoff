@@ -1,0 +1,24 @@
+name: Build Dockerfile
+
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          tags: raphi011/handoff:latest
+          push: false
+
+      - name: Image digest
+        run: echo "Image built with digest: ${{ steps.build.outputs.digest }}"
