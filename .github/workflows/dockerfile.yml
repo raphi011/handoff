@@ -3,10 +3,10 @@ name: Build Dockerfile
 on: [push]
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
 
-     steps:
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v2
 
@@ -19,6 +19,3 @@ jobs:
           context: .
           tags: raphi011/handoff:latest
           push: false
-
-      - name: Image digest
-        run: echo "Image built with digest: ${{ steps.build.outputs.digest }}"

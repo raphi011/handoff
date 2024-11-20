@@ -147,6 +147,7 @@ Once handoff is green in the dashboard you should be able to open up the ui here
 - [ ] (Plugin) Jira - add test run results to a PR.
 - [ ] (Plugin) Prometheus / Loki / Tempo / ELK stack - find and fetch logs/traces/metrics that are created by tests (e.g. for easier debugging) - e.g. via correlation ids
 - [ ] (Technical) Idempotency in post requests via a key to avoid duplicate test runs
+- [ ] (Technical) Index data (e.g. with github.com/blevesearch/bleve) to be able to query test results.
 - [x] (Technical) Server configuration through either ENV vars or cli flags
 - [x] (Technical) Continue test runs on service restart
 - [x] (Technical) Graceful server shutdown
