@@ -8,7 +8,7 @@ package component
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-func Stats() templ.Component {
+func SuiteRuns() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -29,7 +29,7 @@ func Stats() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div><dl class=\"mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3\"><div class=\"overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6\"><dt class=\"truncate text-sm font-medium text-gray-500\">Total Subscribers</dt><dd class=\"mt-1 text-3xl font-semibold tracking-tight text-gray-900\">71,897</dd></div><div class=\"overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6\"><dt class=\"truncate text-sm font-medium text-gray-500\">Avg. Open Rate</dt><dd class=\"mt-1 text-3xl font-semibold tracking-tight text-gray-900\">58.16%</dd></div><div class=\"overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6\"><dt class=\"truncate text-sm font-medium text-gray-500\">Avg. Click Rate</dt><dd class=\"mt-1 text-3xl font-semibold tracking-tight text-gray-900\">24.57%</dd></div></dl></div>")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<main class=\"lg:pl-72\"><header class=\"flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8\"><h1 class=\"text-base/7 font-semibold text-gray-900\">Suite Runs</h1></header></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

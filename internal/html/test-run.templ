@@ -1,10 +1,9 @@
 package html
 
 import (
-   "fmt"
-
-   "github.com/raphi011/handoff/internal/model"
-   "github.com/raphi011/handoff/internal/html/component"
+	"fmt"
+	"github.com/raphi011/handoff/internal/html/component"
+	"github.com/raphi011/handoff/internal/model"
 )
 
 templ RenderTestRun(tr model.TestRun) {
@@ -39,8 +38,11 @@ templ RenderTestSuiteRun(tsr model.TestSuiteRun) {
 
 templ RenderTestSuiteRuns(description string, runs []model.TestSuiteRun) {
 	@body() {
+		@component.SuiteRuns()
 		<h2>Testruns</h2>
-		<p>@templ.Raw(description)</p>
+		<p>
+			@templ.Raw(description)
+		</p>
 		<ul>
 			for _, tsr := range runs {
 				<li>
@@ -53,13 +55,6 @@ templ RenderTestSuiteRuns(description string, runs []model.TestSuiteRun) {
 
 templ RenderTestSuites(suites []model.TestSuite) {
 	@body() {
-		<h2>Test suites</h2>
-		<ul>
-			for _, ts := range suites {
-				<li>
-					<a href={ templ.URL(fmt.Sprintf("/suites/%s/runs", ts.Name)) }>{ ts.Name }</a>
-				</li>
-			}
-		</ul>
+		@component.TestSuites(suites)
 	}
 }
