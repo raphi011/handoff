@@ -2,11 +2,11 @@ package component
 
 import (
 	"fmt"
+	"github.com/raphi011/handoff/internal/html/util"
 	"github.com/raphi011/handoff/internal/model"
 	"sort"
 )
 
-// merge runs and sort them by time
 func mergeRuns(suitesWithRuns []model.TestSuiteWithRuns) []model.TestSuiteRun {
 	var runs []model.TestSuiteRun
 	for _, suite := range suitesWithRuns {
@@ -16,6 +16,13 @@ func mergeRuns(suitesWithRuns []model.TestSuiteWithRuns) []model.TestSuiteRun {
 		return runs[i].Start.After(runs[j].Start)
 	})
 	return runs
+}
+
+func getLatestRun(runs []model.TestSuiteRun) model.TestSuiteRun {
+	sort.Slice(runs, func(i, j int) bool {
+		return runs[i].Start.After(runs[j].Start)
+	})
+	return runs[0]
 }
 
 templ TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) {
@@ -42,10 +49,12 @@ templ TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) {
 						</div>
 						<div class="mt-3 flex items-center gap-x-2.5 text-xs/5 text-gray-400">
 							<p class="truncate">{ fmt.Sprintf("%d tests in suite", len(suite.Suite.Tests)) }</p>
-							<svg viewBox="0 0 2 2" class="size-0.5 flex-none fill-gray-300">
-								<circle cx="1" cy="1" r="1"></circle>
-							</svg>
-							<p class="whitespace-nowrap">Initiated 1m 32s ago</p>
+							if len(suite.SuiteRuns) > 0 {
+								<svg viewBox="0 0 2 2" class="size-0.5 flex-none fill-gray-300">
+									<circle cx="1" cy="1" r="1"></circle>
+								</svg>
+								<p class="whitespace-nowrap">Last run started { util.FormatRelativeTime(getLatestRun(suite.SuiteRuns).Start) }</p>
+							}
 						</div>
 					</div>
 					<!-- <div class="flex-none rounded-full bg-gray-400/10 px-2 py-1 text-xs font-medium text-gray-400 ring-1 ring-inset ring-gray-400/20">Preview</div> -->

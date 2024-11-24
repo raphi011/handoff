@@ -10,11 +10,11 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"fmt"
+	"github.com/raphi011/handoff/internal/html/util"
 	"github.com/raphi011/handoff/internal/model"
 	"sort"
 )
 
-// merge runs and sort them by time
 func mergeRuns(suitesWithRuns []model.TestSuiteWithRuns) []model.TestSuiteRun {
 	var runs []model.TestSuiteRun
 	for _, suite := range suitesWithRuns {
@@ -24,6 +24,13 @@ func mergeRuns(suitesWithRuns []model.TestSuiteWithRuns) []model.TestSuiteRun {
 		return runs[i].Start.After(runs[j].Start)
 	})
 	return runs
+}
+
+func getLatestRun(runs []model.TestSuiteRun) model.TestSuiteRun {
+	sort.Slice(runs, func(i, j int) bool {
+		return runs[i].Start.After(runs[j].Start)
+	})
+	return runs[0]
 }
 
 func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Component {
@@ -68,7 +75,7 @@ func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Componen
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(suite.Suite.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 38, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 45, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -81,13 +88,36 @@ func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Componen
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d tests in suite", len(suite.Suite.Tests)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 44, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 51, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</p><svg viewBox=\"0 0 2 2\" class=\"size-0.5 flex-none fill-gray-300\"><circle cx=\"1\" cy=\"1\" r=\"1\"></circle></svg><p class=\"whitespace-nowrap\">Initiated 1m 32s ago</p></div></div><!-- <div class=\"flex-none rounded-full bg-gray-400/10 px-2 py-1 text-xs font-medium text-gray-400 ring-1 ring-inset ring-gray-400/20\">Preview</div> --><!-- <svg class=\"size-5 flex-none text-gray-400\" viewBox=\"0 0 20 20\" fill=\"currentColor\" aria-hidden=\"true\" data-slot=\"icon\"> --><!-- \t<path fill-rule=\"evenodd\" d=\"M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z\" clip-rule=\"evenodd\"></path> --><!-- </svg> --></li>")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if len(suite.SuiteRuns) > 0 {
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<svg viewBox=\"0 0 2 2\" class=\"size-0.5 flex-none fill-gray-300\"><circle cx=\"1\" cy=\"1\" r=\"1\"></circle></svg><p class=\"whitespace-nowrap\">Last run started ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var5 string
+				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(util.FormatRelativeTime(getLatestRun(suite.SuiteRuns).Start))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 56, Col: 116}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</div></div><!-- <div class=\"flex-none rounded-full bg-gray-400/10 px-2 py-1 text-xs font-medium text-gray-400 ring-1 ring-inset ring-gray-400/20\">Preview</div> --><!-- <svg class=\"size-5 flex-none text-gray-400\" viewBox=\"0 0 20 20\" fill=\"currentColor\" aria-hidden=\"true\" data-slot=\"icon\"> --><!-- \t<path fill-rule=\"evenodd\" d=\"M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z\" clip-rule=\"evenodd\"></path> --><!-- </svg> --></li>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

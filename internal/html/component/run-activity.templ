@@ -47,6 +47,22 @@ templ RunActivity(runs []model.TestSuiteRun) {
 											<time datetime="2020-09-28">{ util.FormatRelativeTime(run.End) }</time>
 										</div>
 									</div>
+								case model.ResultPending:
+									<div>
+										<span class="flex size-8 items-center justify-center rounded-full bg-yellow-500 ring-8 ring-white">
+											<svg class="size-5 text-white" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
+												<path d="M6 10a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm5 0a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm5 0a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"></path>
+											</svg>
+										</span>
+									</div>
+									<div class="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
+										<div>
+											<p class="text-sm text-gray-500"><a href="#" class="font-medium text-gray-900">Test Run <b>{ fmt.Sprintf("%d", run.ID) }</b> pending for <b>{ run.SuiteName }</b></a></p>
+										</div>
+										<div class="whitespace-nowrap text-right text-sm text-gray-500">
+											<time datetime="2020-09-28">{ util.FormatRelativeTime(run.End) }</time>
+										</div>
+									</div>
 							}
 						</div>
 					</div>
