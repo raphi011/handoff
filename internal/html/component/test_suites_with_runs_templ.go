@@ -59,7 +59,40 @@ func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Componen
 			return templ_7745c5c3_Err
 		}
 		for _, suite := range suitesWithRuns {
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<li class=\"relative flex items-center space-x-4 px-4 py-4 sm:px-6 lg:px-8\"><div class=\"min-w-0 flex-auto\"><div class=\"flex items-center gap-x-3\"><div class=\"flex-none rounded-full bg-gray-600/10 p-1 text-gray-500\"><div class=\"size-2 rounded-full bg-current\"></div></div><h2 class=\"min-w-0 text-sm/6 font-semibold text-gray-500\"><a href=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<li class=\"relative flex items-center space-x-4 px-4 py-4 sm:px-6 lg:px-8\"><div class=\"min-w-0 flex-auto\"><div class=\"flex items-center gap-x-3\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if len(suite.SuiteRuns) > 0 {
+				switch getLatestRun(suite.SuiteRuns).Result {
+				case model.ResultFailed:
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"flex-none rounded-full bg-rose-400/10 p-1 text-rose-400\"><div class=\"size-2 rounded-full bg-current\"></div></div>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				case model.ResultPassed:
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"flex-none rounded-full bg-green-400/10 p-1 text-green-400\"><div class=\"size-2 rounded-full bg-current\"></div></div>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				case model.ResultPending:
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"flex-none rounded-full bg-gray-600/10 p-1 text-gray-500\"><div class=\"size-2 rounded-full bg-current\"></div></div>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				default:
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"flex-none rounded-full bg-gray-600/10 p-1 text-gray-500\"><div class=\"size-2 rounded-full bg-current\"></div></div>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+			} else {
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<div class=\"flex-none rounded-full bg-gray-600/10 p-1 text-gray-500\"><div class=\"size-2 rounded-full bg-current\"></div></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<h2 class=\"min-w-0 text-sm/6 font-semibold text-gray-500\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -75,7 +108,7 @@ func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Componen
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(suite.Suite.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 45, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 66, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -88,7 +121,7 @@ func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Componen
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d tests in suite", len(suite.Suite.Tests)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 51, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 72, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -106,7 +139,7 @@ func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Componen
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(util.FormatRelativeTime(getLatestRun(suite.SuiteRuns).Start))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 56, Col: 116}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 77, Col: 116}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
