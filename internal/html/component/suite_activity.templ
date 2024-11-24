@@ -25,7 +25,7 @@ templ SuiteActivity(runs []model.TestSuiteRun) {
 									</div>
 									<div class="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
 										<div>
-											<p class="text-sm text-gray-500"><a href="#" class="font-medium text-gray-900">Test Run <b>{ fmt.Sprintf("%d", run.ID) }</b> failed for <b>{ run.SuiteName }</b></a></p>
+											<p class="text-sm text-gray-500"><a href={ templ.URL(fmt.Sprintf("/suites/%s/runs/%d", run.SuiteName, run.ID)) } class="font-medium text-gray-900">Test Run <b>{ fmt.Sprintf("%d", run.ID) }</b> failed for <b>{ run.SuiteName }</b></a></p>
 										</div>
 										<div class="whitespace-nowrap text-right text-sm text-gray-500">
 											<time datetime="2020-09-28">{ util.FormatRelativeTime(run.End) }</time>
@@ -41,7 +41,7 @@ templ SuiteActivity(runs []model.TestSuiteRun) {
 									</div>
 									<div class="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
 										<div>
-											<p class="text-sm text-gray-500"><a href="#" class="font-medium text-gray-900">Test Run <b>{ fmt.Sprintf("%d", run.ID) }</b> passed for <b>{ run.SuiteName }</b></a></p>
+											<p class="text-sm text-gray-500"><a href={ templ.URL(fmt.Sprintf("/suites/%s/runs/%d", run.SuiteName, run.ID)) } class="font-medium text-gray-900">Test Run <b>{ fmt.Sprintf("%d", run.ID) }</b> passed for <b>{ run.SuiteName }</b></a></p>
 										</div>
 										<div class="whitespace-nowrap text-right text-sm text-gray-500">
 											<time datetime="2020-09-28">{ util.FormatRelativeTime(run.End) }</time>
@@ -57,7 +57,7 @@ templ SuiteActivity(runs []model.TestSuiteRun) {
 									</div>
 									<div class="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
 										<div>
-											<p class="text-sm text-gray-500"><a href="#" class="font-medium text-gray-900">Test Run <b>{ fmt.Sprintf("%d", run.ID) }</b> pending for <b>{ run.SuiteName }</b></a></p>
+											<p class="text-sm text-gray-500"><a href={ templ.URL(fmt.Sprintf("/suites/%s/runs", run.SuiteName)) } class="font-medium text-gray-900">Test Run <b>{ fmt.Sprintf("%d", run.ID) }</b> pending for <b>{ run.SuiteName }</b></a></p>
 										</div>
 										<div class="whitespace-nowrap text-right text-sm text-gray-500">
 											<time datetime="2020-09-28">{ util.FormatRelativeTime(run.End) }</time>
