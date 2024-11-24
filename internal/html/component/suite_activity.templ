@@ -6,7 +6,7 @@ import (
 	"github.com/raphi011/handoff/internal/model"
 )
 
-templ RunActivity(runs []model.TestSuiteRun) {
+templ SuiteActivity(runs []model.TestSuiteRun) {
 	<div class="flow-root">
 		<ul role="list" class="-mb-8">
 			for _, run := range runs {

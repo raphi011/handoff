@@ -92,7 +92,7 @@ templ TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) {
 			<a href="#" class="text-sm/6 font-semibold text-indigo-400">View all</a>
 		</header>
 		<div class="divide-y divide-white/5 border-t p-5">
-			@RunActivity(mergeRuns(suitesWithRuns))
+			@SuiteActivity(mergeRuns(suitesWithRuns))
 		</div>
 	</aside>
 }

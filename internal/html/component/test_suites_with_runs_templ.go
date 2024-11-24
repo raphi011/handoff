@@ -159,7 +159,7 @@ func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Componen
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = RunActivity(mergeRuns(suitesWithRuns)).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = SuiteActivity(mergeRuns(suitesWithRuns)).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

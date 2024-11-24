@@ -79,7 +79,7 @@ func TestSuites(suites []model.TestSuite) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</ul></main><aside class=\"bg-white lg:fixed lg:bottom-0 lg:right-0 lg:top-0 lg:w-2/6 lg:overflow-y-auto lg:border-l lg:border-gray/5\"><header class=\"flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8\"><h2 class=\"text-base/7 font-semibold text-gray-900\">Runs</h2><a href=\"#\" class=\"text-sm/6 font-semibold text-indigo-400\">View all</a></header><div class=\"divide-y divide-white/5 border-t p-5\"><!-- @RunActivity() --></div></aside>")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</ul></main><aside class=\"bg-white lg:fixed lg:bottom-0 lg:right-0 lg:top-0 lg:w-2/6 lg:overflow-y-auto lg:border-l lg:border-gray/5\"><header class=\"flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8\"><h2 class=\"text-base/7 font-semibold text-gray-900\">Runs</h2><a href=\"#\" class=\"text-sm/6 font-semibold text-indigo-400\">View all</a></header><div class=\"divide-y divide-white/5 border-t p-5\"><!-- @SuiteActivity() --></div></aside>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
