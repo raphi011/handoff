@@ -222,16 +222,11 @@ func (s *Server) getTestSuitesWithRuns(w http.ResponseWriter, r *http.Request, p
 			return
 		}
 
-		fmt.Println(len(runs))
-
 		testSuitesWitRuns = append(testSuitesWitRuns, model.TestSuiteWithRuns{
 			Suite:     suite,
 			SuiteRuns: runs,
 		})
 	}
-
-	fmt.Println(len(s.readOnlyTestSuites))
-	fmt.Println(len(testSuitesWitRuns))
 
 	s.writeResponse(w, r, http.StatusOK, testSuitesWitRuns)
 }

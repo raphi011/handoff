@@ -11,7 +11,20 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"fmt"
 	"github.com/raphi011/handoff/internal/model"
+	"sort"
 )
+
+// merge runs and sort them by time
+func mergeRuns(suitesWithRuns []model.TestSuiteWithRuns) []model.TestSuiteRun {
+	var runs []model.TestSuiteRun
+	for _, suite := range suitesWithRuns {
+		runs = append(runs, suite.SuiteRuns...)
+	}
+	sort.Slice(runs, func(i, j int) bool {
+		return runs[i].Start.After(runs[j].Start)
+	})
+	return runs
+}
 
 func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
@@ -34,7 +47,7 @@ func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Componen
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<main class=\"lg:pl-72\"><header class=\"flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8\"><h1 class=\"text-base/7 font-semibold text-gray-900\">Test Suites With Runs</h1></header><ul role=\"list\" class=\"divide-y divide-gray/5 border-t border-b\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("<main class=\"lg:pl-72\"><header class=\"flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8\"><h1 class=\"text-base/7 font-semibold text-gray-900\">Test Suites</h1></header><ul role=\"list\" class=\"divide-y divide-gray/5 border-t border-b\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -55,7 +68,7 @@ func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Componen
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(suite.Suite.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 25, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 38, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -68,7 +81,7 @@ func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Componen
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d tests in suite", len(suite.Suite.Tests)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 31, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites_with_runs.templ`, Line: 44, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -79,11 +92,11 @@ func TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) templ.Componen
 				return templ_7745c5c3_Err
 			}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</ul></main><aside class=\"bg-white lg:fixed lg:bottom-0 lg:right-0 lg:top-0 lg:w-2/6 lg:overflow-y-auto lg:border-l lg:border-gray/5\"><header class=\"flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8\"><h2 class=\"text-base/7 font-semibold text-gray-900\">Runs</h2><a href=\"#\" class=\"text-sm/6 font-semibold text-indigo-400\">View all</a></header><div class=\"divide-y divide-white/5 border-t p-5\">")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</ul></main><aside class=\"bg-white lg:fixed lg:bottom-0 lg:right-0 lg:top-0 lg:w-2/6 lg:overflow-y-auto lg:border-l lg:border-gray/5\"><header class=\"flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8\"><h2 class=\"text-base/7 font-semibold text-gray-900\">Activity</h2><a href=\"#\" class=\"text-sm/6 font-semibold text-indigo-400\">View all</a></header><div class=\"divide-y divide-white/5 border-t p-5\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = RunActivity().Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = RunActivity(mergeRuns(suitesWithRuns)).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -3,12 +3,25 @@ package component
 import (
 	"fmt"
 	"github.com/raphi011/handoff/internal/model"
+	"sort"
 )
+
+// merge runs and sort them by time
+func mergeRuns(suitesWithRuns []model.TestSuiteWithRuns) []model.TestSuiteRun {
+	var runs []model.TestSuiteRun
+	for _, suite := range suitesWithRuns {
+		runs = append(runs, suite.SuiteRuns...)
+	}
+	sort.Slice(runs, func(i, j int) bool {
+		return runs[i].Start.After(runs[j].Start)
+	})
+	return runs
+}
 
 templ TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) {
 	<main class="lg:pl-72">
 		<header class="flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-			<h1 class="text-base/7 font-semibold text-gray-900">Test Suites With Runs</h1>
+			<h1 class="text-base/7 font-semibold text-gray-900">Test Suites</h1>
 		</header>
 		<ul role="list" class="divide-y divide-gray/5 border-t border-b">
 			for _, suite := range suitesWithRuns {
@@ -45,11 +58,11 @@ templ TestSuitesWithRuns(suitesWithRuns []model.TestSuiteWithRuns) {
 	</main>
 	<aside class="bg-white lg:fixed lg:bottom-0 lg:right-0 lg:top-0 lg:w-2/6 lg:overflow-y-auto lg:border-l lg:border-gray/5">
 		<header class="flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-			<h2 class="text-base/7 font-semibold text-gray-900">Runs</h2>
+			<h2 class="text-base/7 font-semibold text-gray-900">Activity</h2>
 			<a href="#" class="text-sm/6 font-semibold text-indigo-400">View all</a>
 		</header>
 		<div class="divide-y divide-white/5 border-t p-5">
-			@RunActivity()
+			@RunActivity(mergeRuns(suitesWithRuns))
 		</div>
 	</aside>
 }
