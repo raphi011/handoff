@@ -49,3 +49,9 @@ templ RenderTestSuites(suites []model.TestSuite) {
 		@component.TestSuites(suites)
 	}
 }
+
+templ RenderTestSuitesWithRuns(suites []model.TestSuiteWithRuns) {
+	@body() {
+		@component.TestSuitesWithRuns(suites)
+	}
+}

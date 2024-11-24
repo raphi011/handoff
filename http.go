@@ -43,7 +43,7 @@ func (s *Server) runHTTP() error {
 	router.GET("/ready", s.getReady)
 
 	router.POST("/suites/:suite-name/runs", s.startTestSuite)
-	router.GET("/suites", s.getTestSuites)
+	router.GET("/suites", s.getTestSuitesWithRuns)
 	router.GET("/suites/:suite-name/runs", s.getTestSuiteRuns)
 	router.GET("/suites/:suite-name/runs/:run-id", s.getTestSuiteRun)
 	router.GET("/suites/:suite-name/runs/:run-id/test/:test-name", s.getTestRunResult)
@@ -212,6 +212,30 @@ func (s *Server) getTestSuites(w http.ResponseWriter, r *http.Request, p httprou
 	s.writeResponse(w, r, http.StatusOK, testSuites)
 }
 
+func (s *Server) getTestSuitesWithRuns(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	testSuitesWitRuns := make([]model.TestSuiteWithRuns, 0, len(s.readOnlyTestSuites))
+
+	for _, suite := range s.readOnlyTestSuites {
+		runs, err := s.storage.LoadTestSuiteRunsByName(r.Context(), suite.Name)
+		if err != nil {
+			s.httpError(w, err)
+			return
+		}
+
+		fmt.Println(len(runs))
+
+		testSuitesWitRuns = append(testSuitesWitRuns, model.TestSuiteWithRuns{
+			Suite:     suite,
+			SuiteRuns: runs,
+		})
+	}
+
+	fmt.Println(len(s.readOnlyTestSuites))
+	fmt.Println(len(testSuitesWitRuns))
+
+	s.writeResponse(w, r, http.StatusOK, testSuitesWitRuns)
+}
+
 func (s *Server) getTestSuiteRun(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	testRun, err := s.loadTestSuiteRun(r.Context(), p)
 	if err != nil {
@@ -277,6 +301,8 @@ func (s *Server) writeResponse(w http.ResponseWriter, r *http.Request, status in
 			err = html.RenderTestSuiteRuns(buf.String(), t).Render(r.Context(), w)
 		case []model.TestSuite:
 			err = html.RenderTestSuites(t).Render(r.Context(), w)
+		case []model.TestSuiteWithRuns:
+			err = html.RenderTestSuitesWithRuns(t).Render(r.Context(), w)
 		default:
 			return fmt.Errorf("no template available for type %v", t)
 		}

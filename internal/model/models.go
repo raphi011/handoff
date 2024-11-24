@@ -310,6 +310,11 @@ type TestSuite struct {
 	// lock      *sync.Mutex
 }
 
+type TestSuiteWithRuns struct {
+	Suite     TestSuite
+	SuiteRuns []TestSuiteRun
+}
+
 func (t TestSuite) SafeTeardown() (err error) {
 	if t.Teardown == nil {
 		return nil
