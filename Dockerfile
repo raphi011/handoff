@@ -6,8 +6,6 @@ WORKDIR /app
 
 COPY go.* .
 
-break this file to test gh action
-
 RUN go mod download && go mod verify
 
 COPY . .
