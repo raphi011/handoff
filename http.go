@@ -17,6 +17,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/raphi011/handoff/internal/html"
+	"github.com/raphi011/handoff/internal/html/assets"
 	"github.com/raphi011/handoff/internal/model"
 	"github.com/yuin/goldmark"
 )
@@ -51,6 +52,8 @@ func (s *Server) runHTTP() error {
 	router.GET("/schedules", s.getSchedules)
 	router.POST("/schedules/:schedule-name", s.createSchedule)
 	router.DELETE("/schedules/:schedule-name", s.deleteSchedule)
+
+	router.ServeFiles("/assets/*filepath", http.FS(assets.Assets))
 
 	s.httpServer = &http.Server{
 		Handler: router,

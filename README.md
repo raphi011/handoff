@@ -1,4 +1,4 @@
-# Handoff
+# 🤝 Handoff
 
 Handoff is a library that allows you to bootstrap a server that runs scheduled and manually triggered e2e tests written in Go and is extensible through plugins.
 
