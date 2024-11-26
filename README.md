@@ -1,5 +1,7 @@
 # 🤝 Handoff
 
+![Go Tests](https://github.com/raphi011/handoff/actions/workflows/go-tests.yml/badge.svg)
+
 Handoff is a library that allows you to bootstrap a server that runs scheduled and manually triggered e2e tests written in Go and is extensible through plugins.
 
 ## Why Handoff?
@@ -40,8 +42,8 @@ Bootstrapping a server is simple, all you need to do is run this code:
 package main
 
 func main() {
- h := handoff.New()
- h.Run()
+	h := handoff.New()
+	h.Run()
 }
 ```
 
@@ -51,7 +53,7 @@ Another way is to register them via `handoff.Register` before calling `handoff.N
 
 ```go
 func init() {
-    handoff.Register(ts, scheduledRuns)
+	handoff.Register(ts, scheduledRuns)
 }
 ```
 
