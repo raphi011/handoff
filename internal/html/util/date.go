@@ -42,19 +42,3 @@ func pluralize(n int) string {
 	}
 	return ""
 }
-
-func main() {
-	now := time.Now()
-
-	// Test cases
-	testDates := []time.Time{
-		now.Add(-5 * time.Second),     // 5 seconds ago
-		now.Add(-2 * time.Minute),     // 2 minutes ago
-		now.Add(-26 * time.Hour),      // 1 day ago
-		now.Add(-10 * 24 * time.Hour), // Over a week ago (formatted date)
-	}
-
-	for _, t := range testDates {
-		fmt.Println(FormatRelativeTime(t))
-	}
-}
