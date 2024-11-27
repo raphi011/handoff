@@ -32,7 +32,6 @@ stability of the platform and making it available via a `/metrics` endpoint.
 * Triggering of alerts on test failures (e.g. via pagerduty).
 * Automated notifications on test runs (e.g. via slack messages).
 * Github Integration: adding test run results to relevant PRs after they were merged and deployed.
-*
 
 ## Example
 
@@ -125,61 +124,7 @@ Once handoff is green in the dashboard you should be able to open up the ui here
 
 ## Planned features
 
-- [ ] (Feature) Write a tool "transformcli" that uses go:generate and go/ast to transform handoff tests and suites to standard go tests (suite -> test with subtests + init and cleanup)
-- [ ] (Feature) Users
-  - [ ] Teams (assigned to test suites)
-  - [ ] Favorite test suites (UI)
-  - [ ] authentication providers (LDAP, Oauth2, ...)
-- [ ] (Feature) Test Suite Metadata (desription in markdown, links to e.g. github, documentation, handbook, ...) shown in UI
-- [ ] (Feature) Automatic test run retries/backoff on failures
-- [ ] (Feature) Add a limit to scheduled runs (stop after X runs or X mins)
-- [ ] (Feature) CLI program to run tests and wait for results, export results to json (via the server's http api)
-- [ ] (Feature) Dashboard UI that shows handoff statistics, running tests, resource usage (cpu, memory, active go routines...) etc
-- [ ] (Feature) Opt-in test timeouts through t.Context and / or providing wrapped handoff functions ( e.g. http clients) to be used in tests  that implement test timeouts
-- [ ] (Feature) Add test-suite labels
-- [ ] (Feature) If test was run within the context of a PR maybe we can figure out who the author was (via commit emails) and send an email if a test failed.
-- [ ] (Feature) Allow running of handoff as headless/cli mode (without http server) that returns a code != 0 if a test has failed (e.g. in github actions CI)
-- [ ] (Feature) Add an option to the helm chart to support remote debugging through dlv
-- [ ] (Feature) Image for [helm chart](https://helm.sh/docs/topics/chart_tests/) tests for automated helm release rollbacks
-- [ ] (Feature) Test suite namespaces for grouping
-- [ ] (Feature) Asynchronous plugin hooks with callbacks for slow operations (e.g. http calls)
-- [ ] (Plugin) Pagerduty - triger alerts/incidents on failed e2e tests
-- [ ] (Plugin) Slack - send messages to slack channels when tests pass / fail
-- [ ] (Plugin) Github - pr status checks
-- [ ] (Plugin) Jira - add test run results to a PR.
-- [ ] (Plugin) Prometheus / Loki / Tempo / ELK stack - find and fetch logs/traces/metrics that are created by tests (e.g. for easier debugging) - e.g. via correlation ids
-- [ ] (Technical) Idempotency in post requests via a key to avoid duplicate test runs
-- [ ] (Technical) Index data (e.g. with github.com/blevesearch/bleve) to be able to query test results.
-- [x] (Technical) Server configuration through either ENV vars or cli flags
-- [x] (Technical) Continue test runs on service restart
-- [x] (Technical) Graceful server shutdown
-- [x] (Technical) Well tested
-- [x] (Technical) Registering of `TestSuite`s and `ScheduledRun`s via imported packages
-- [x] (Technical) Persistence layer
-- [x] (Feature) Persist compressed test logs to save space
-- [x] (Feature) Soft test fails that don't fail the entire testsuite. This can be used to help with the chicken/egg problem when you add new tests that target a new service version that is not deployed yet.
-- [x] (Feature) Basic webui bundled in the service that shows test run results
-- [x] (Feature) Configurable test run retention policy (TTL)
-- [x] (Feature) Start test runs via POST requests
-- [x] (Feature) Write test suites with multiple tests written in Go
-- [x] (Feature) Manual retrying of failed tests
-- [x] (Feature) Skip individual tests by calling t.Skip() within a test
-- [x] (Feature) Scheduled / recurring test runs (e.g. for soak tests)
-- [x] (Feature) Skip test subsets via regex filters passed into a test run
-- [x] (Feature) Flaky test detection + metric label
-- [x] (Feature) Support existing assertion libraries like stretch/testify
-- [x] (Feature) Prometheus /metrics endpoint that exposes test metrics
-- [x] (Feature) Basic support for plugins to hook into the test lifecycle
-
-## Potential features
-
-* [ ] (Technical) Websocket that streams test results (like test logs) - this could be used by the cli tool to get live updates on running tests
-* [ ] (Technical) Authenticated HTTP requests through TLS client certificates
-* [ ] (Feature) Grafana service dashboard template
-* [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
-* [ ] (Feature) Output go test json report
-* [ ] (Feature) Support running tests in languages other than go
-* [ ] (Feature) k8s operator / CRDs to configure test runs & schedules (we probably don't need this)
+See [here](./docs/FEATURES.md).
 
 ## Open questions
 
