@@ -325,7 +325,7 @@ func headerAcceptsType(h http.Header, mimeType string) bool {
 	return strings.Contains(accept, mimeType)
 }
 
-func (s *Server) loadTestSuite(r *http.Request, p httprouter.Params) (model.TestSuite, error) {
+func (s *Server) loadTestSuite(_ *http.Request, p httprouter.Params) (model.TestSuite, error) {
 	suiteName := p.ByName("suite-name")
 
 	ts, ok := s.readOnlyTestSuites[suiteName]
@@ -337,7 +337,7 @@ func (s *Server) loadTestSuite(r *http.Request, p httprouter.Params) (model.Test
 	return ts, nil
 }
 
-func (s *Server) loadTestRuns(ctx context.Context, r *http.Request, p httprouter.Params) ([]model.TestRun, error) {
+func (s *Server) loadTestRuns(ctx context.Context, _ *http.Request, p httprouter.Params) ([]model.TestRun, error) {
 	suiteName := p.ByName("suite-name")
 	testName := p.ByName("test-name")
 	runID, err := strconv.Atoi(p.ByName("run-id"))
