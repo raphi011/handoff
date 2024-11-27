@@ -13,3 +13,10 @@ Handoff is designed to be deployable as one binary without any external dependen
 * no external cache
 
 It is also not designed to horizontally scale. That means only instance can run at a time. Changing this would add significant complexity and should not be necessary because testing distributed systems normally entails mostly waiting for network requests and typically does not require a lot of resources.
+
+Always remember to:
+
+* Write tests
+* Write documentation
+* Make sure the startup of the server remains fast
+* Not import any dependencies you don't absolutely need
