@@ -16,35 +16,49 @@ import (
 type TestSuiteRun struct {
 	// ID is the identifier of the test run.
 	ID int `json:"id"`
+
 	// SuiteName is the name of the test suite that is run.
 	SuiteName string `json:"suiteName"`
+
 	// Result is the outcome of the entire test suite run.
 	Result Result `json:"result"`
+
 	// Tests counts the total amount of tests in the suite.
 	Tests int `json:"tests"`
+
 	// Flaky is set to true if one or more tests only succeed
 	// after being retried.
 	Flaky bool `json:"flaky"`
+
 	// Params passed in to a run.
 	Params RunParams `json:"params"`
+
 	// Scheduled is the time when the test was triggered, e.g.
 	// through a http call.
 	Scheduled time.Time `json:"scheduled"`
+
 	// Start is the time when the test run first started executing.
 	Start time.Time `json:"start"`
+
 	// End is the time when the test run finished executing.
 	End time.Time `json:"end"`
+
 	// DurationInMS is the test run execution times summed up.
 	DurationInMS int64 `json:"durationInMs"`
+
 	// SetupLogs are the logs that are written during the setup phase.
 	SetupLogs string `json:"setupLogs"`
+
 	// InitiatedBy is a reference to the initiator of this run (e.g. github web hook)
 	InitiatedBy string `json:"initiatedBy"`
 
-	Reference      string `json:"reference"`
+	Reference string `json:"reference"`
+
 	IdempotencyKey string `json:"idempotencyKey"`
+
 	// Environment is additional information on where the tests are run (e.g. cluster name).
 	Environment string `json:"environment"`
+
 	// TestResults contains the detailed test results of each test.
 	TestResults []TestRun `json:"testResults"`
 }
@@ -52,16 +66,24 @@ type TestSuiteRun struct {
 type ScheduledRun struct {
 	// Name is the name of the schedule.
 	Name string
+
 	// TestSuiteName is the name of the test suite to be run.
 	TestSuiteName string
+
 	// Schedule defines how often a run is scheduled. For the format see
 	// https://pkg.go.dev/github.com/robfig/cron#hdr-CRON_Expression_Format
 	Schedule string
+
 	// TestFilter allows enabling/filtering only certain tests of a testsuite to be run
 	TestFilter *regexp.Regexp
 
-	// TODO: make it possible to stop scheduled runs after a # of runs or after a certain amount of time
-	StopAfter string
+	// RunCount is the number of times a scheduled run has run in the past.
+	RunCount int
+
+	// MaxRuns allows you to set a limit on how often a scheduled run is executed.
+	// If set to 0 it will run forever.
+	MaxRuns int
+
 	// EntryID identifies the cronjob
 	EntryID cron.EntryID
 }
@@ -69,14 +91,22 @@ type ScheduledRun struct {
 type RunParams struct {
 	// InitiatedBy e.g. jenkins, manual user initiated, scheduled run
 	InitiatedBy string
+
 	// Reference can be set when starting a new test suite run to identify
-	// a test run by a user provided value.
-	Reference       string
+	// a test run by a user provided value, e.g. a when started in the web ui
+	// you can add something like "manual test by user foo" to easily find this
+	// run later.
+	Reference string
+
 	MaxTestAttempts int
 
 	// IdempotencyKey is an optional param and if set avoids starting more than
 	// one test run with this key (within 72 hours of the first occurence).
 	IdempotencyKey string
+
+	// Timeout defines how long a test can run before it is cancelled.
+	Timeout time.Duration
+
 	// TestFilter filters out a subset of the tests and skips the remaining ones.
 	TestFilter *regexp.Regexp
 }
@@ -187,26 +217,37 @@ func (tsr TestSuiteRun) TestSuiteDuration() int64 {
 }
 
 type TestRun struct {
-	SuiteName  string `json:"suiteName"`
-	SuiteRunID int    `json:"suiteRunId"`
-	Name       string `json:"name"`
+	SuiteName string `json:"suiteName"`
+
+	SuiteRunID int `json:"suiteRunId"`
+
+	Name string `json:"name"`
+
 	// Result is the outcome of the test run.
 	Result Result `json:"result"`
+
 	// Test run attempt counter
 	Attempt int `json:"attempt"`
+
 	// SoftFailure if set to true, does not fail a test suite when the test run fails.
 	SoftFailure bool `json:"softFailure"`
+
 	// Logs contains log messages written by the test itself.
 	Logs string `json:"logs"`
+
 	// Start marks the start time of the test run.
 	Start time.Time `json:"start"`
+
 	// End marks the end time of the test run.
 	End time.Time `json:"end"`
+
 	// DurationInMS is the duration of the test run in milliseconds (end-start).
 	DurationInMS int64 `json:"durationInMs"`
+
 	// Spans are timings that can be created within a test that give more information
 	// on how long certain parts of a test took.
 	Spans []*Span `json:"spans"`
+
 	// Context contains additional testrun specific information that is collected during and
 	// after a test run either by the test itself (`t.SetContext`) or via plugins. This can
 	// e.g. contain correlation ids or links to external services that may help debugging a test run
@@ -300,15 +341,21 @@ type TestFunc func(t TB)
 type TestSuite struct {
 	// Name of the testsuite
 	Name string `json:"name"`
+
 	// TestRetries is the amount of times a test is retried when failing.
 	MaxTestAttempts int
+
 	// Namespace allows grouping of test suites, e.g. by team name.
 	Namespace string
-	Setup     func() error
+
+	Setup func() error
+
 	// Description is used provided markdown text that describes the test suite.
 	Description string
-	Teardown    func() error
-	Tests       map[string]TestFunc
+
+	Teardown func() error
+
+	Tests map[string]TestFunc
 	// lock      *sync.Mutex
 }
 
