@@ -12,7 +12,7 @@ A list of planned / implemented features.
 - [ ] [Helm Chart](#helm-chart)
 - [ ] [Scheduled Tests](#scheduled-tests)
 
-## Planned
+## List of potential features
 
 ### Basic WebUI
 
@@ -74,7 +74,7 @@ Prometheus /metrics endpoint that exposes test run metrics.
 
 ### Improved UI
 
-* Dashboard UI that shows handoff statistics, running tests, resource usage (cpu, memory, active go routines...) etc
+Dashboard UI that shows handoff statistics, running tests, resource usage (cpu, memory, active go routines...) etc
 
 ### Email Notifications
 
@@ -88,34 +88,64 @@ Add test run results to a related ticket.
 
 ### Headless Server
 
-Allow running handoff as a cli tool without a webui to execute tests in a CI environment.
+Allow running handoff as a cli tool in headless mode (without the web server) to e.g. run tests in a CI environment and return a code != 0 if the tests have failed.
 
-## Backlog
+### Automatic Pprof Profiling
 
-- [ ] (Feature) Opt-in test timeouts through t.Context and / or providing wrapped handoff functions (e.g. http clients) to be used in tests  that implement test timeouts
-- [ ] (Feature) Add test-suite labels
-- [ ] (Feature) Allow running of handoff as headless/cli mode (without http server) that returns a code != 0 if a test has failed (e.g. in github actions CI)
-- [ ] (Feature) Add an option to the helm chart to support remote debugging through dlv
-- [ ] (Feature) Image for [helm chart](https://helm.sh/docs/topics/chart_tests/) tests for automated helm release rollbacks
-- [ ] (Feature) Test suite namespaces for grouping
-- [ ] (Plugin) Github - add test results as PR comments after it was merged
-- [ ] (Plugin) Prometheus / Loki / Tempo / ELK stack - find and fetch logs/traces/metrics that are created by tests (e.g. for easier debugging) - e.g. via correlation ids
-- [x] (Feature) Soft test fails that don't fail the entire testsuite. This can be used to help with the chicken/egg problem when you add new tests that target a new service version that is not deployed yet.
-- [x] (Feature) Configurable test run retention policy (TTL)
+A test can automatically fetch pprof profiles (go only) from the SUT while the test is running and them for later inspection.
 
-## Potential features
+### Test Timeouts
 
-* [ ] (Technical) Websocket that streams test results (like test logs) - this could be used by the cli tool to get live updates on running tests
-* [ ] (Technical) Authenticated HTTP requests through TLS client certificates
-* [ ] (Feature) Grafana service dashboard template
-* [ ] (Feature) Service dashboards that show information of services k8s resources running in a cluster and their test suite runs
-* [ ] (Feature) Output go test json report
-* [ ] (Feature) Support running tests in languages other than go
-* [ ] (Feature) k8s operator / CRDs to configure test runs & schedules (we probably don't need this)
+Opt-in test timeouts through t.Context and / or providing wrapped handoff functions (e.g. http clients) to be used in tests  that implement test timeouts
 
+### Test Labels
 
-## dumping ground
+Attach labels to tests to easily filter for them later.
 
+### Chart tests
+
+Maybe we can use handoff in [helm chart tests](https://helm.sh/docs/topics/chart_tests/) to make sure that new helm chart deployments are working as expected.
+
+### Github Integration
+
+After a PR is merged and deployed we can update the PR with the results of the automated handoff test
+
+### Fetch & Link Observability data
+
+Prometheus / Loki / Tempo / ELK stack - find and fetch logs/traces/metrics that are created by tests (e.g. for easier debugging) - e.g. via correlation ids
+
+### Soft test Fails
+
+Tests that don't fail the entire testsuite. This can be used to help with the chicken/egg problem when you add new tests that target a new service version
+that is not deployed yet.
+
+### Configurable test retention
+
+Delete old test runs after e.g. X days.
+
+### Stream test results to UI or CLI
+
+Create a websocket / SSE endpoint that can stream test results / logs.
+
+### Grafana service dashboard template
+
+Create a grafana dashboard that displays the exported prometheus metrics from handoff in useful graphs.
+
+### Per SUT/Service view on tests
+
+Service dashboards that show information of services k8s resources running in a cluster and their test suite runs..
+
+### Support running tests in languages other than go
+
+It should be possible to run external tests, e.g. java tests via the junit test runner CLI command and persist the results in handoff. It's unclear which features of handoff we can support in this mode.
+
+### K8s CRDs
+
+Configure Test Schedules (and maybe other things) through k8s CRDs.
+
+## Dumping ground for other ideas
+
+- [ ] (Feature) Output go test json report
 - [ ] (Feature) Automatic test run retries/backoff on failures
 - [ ] (Technical) Run tests in parallel
 - [ ] (Technical) Index data (e.g. with github.com/blevesearch/bleve) to be able to query test results.
