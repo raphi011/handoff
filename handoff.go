@@ -413,6 +413,25 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 		option.MaxTestAttempts = ts.MaxTestAttempts
 	}
 
+	ctx := context.Background()
+
+	if option.IdempotencyKey != "" {
+		tsrID, err := s.storage.InsertIdempotencyKey(ctx, option.IdempotencyKey)
+
+		var duplicateErr model.DuplicateError
+
+		if tsrID != "" {
+			return s.storage.LoadTestSuiteRunByKey(ctx, tsrID)
+		} else if errors.As(err, &duplicateErr) {
+			// rare case where there is a duplicate but the tsr id was not persisted yet.
+			// a retry should return the test suite run of the first request with this
+			// idempotency key.
+			return model.TestSuiteRun{}, duplicateErr
+		} else if err != nil {
+			return model.TestSuiteRun{}, fmt.Errorf("")
+		}
+	}
+
 	tsr := model.TestSuiteRun{
 		SuiteName:      ts.Name,
 		TestResults:    []model.TestRun{},
@@ -445,13 +464,22 @@ func (s *Server) startNewTestSuiteRun(ts model.TestSuite, option model.RunParams
 		tsr.TestResults = append(tsr.TestResults, tr)
 	}
 
-	ctx := context.Background()
-
 	var err error
 
 	tsr.ID, err = s.storage.InsertTestSuiteRun(ctx, tsr)
 	if err != nil {
 		return model.TestSuiteRun{}, fmt.Errorf("unable to persist new test suite run: %w", err)
+	}
+
+	if err = s.storage.UpdateIdempotencyKey(
+		ctx,
+		tsr.IdempotencyKey,
+		tsr.SuiteName,
+		tsr.ID,
+	); err != nil {
+		s.log.
+			With("suite-name", tsr.SuiteName, "run-id", tsr.ID).
+			Warn("failed to insert idempotency key, continuing", "error", err)
 	}
 
 	tsrCopy := tsr.Copy()
@@ -567,7 +595,7 @@ func (s *Server) runTestSuite(
 // runTest runs an individual test that is part of a test suite. This function must only be called
 // by `runTestSuite()`.
 func (s *Server) runTest(
-	ctx context.Context,
+	_ context.Context,
 	suite model.TestSuite,
 	testSuiteRun model.TestSuiteRun,
 	testRun *model.TestRun,

@@ -1,9 +1,14 @@
 @url=http://localhost:1337
 @ts=my-app
 
+### Create new test run with an idempotency key
+
+POST {{url}}/suites/{{ts}}/runs
+
 ### Create new test run
 
 POST {{url}}/suites/{{ts}}/runs
+Idempotency-Key: foobar
 
 ### Get existing test run
 

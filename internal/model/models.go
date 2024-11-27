@@ -73,8 +73,10 @@ type RunParams struct {
 	// a test run by a user provided value.
 	Reference       string
 	MaxTestAttempts int
-	IdempotencyKey  string
-	Timeout         time.Duration
+
+	// IdempotencyKey is an optional param and if set avoids starting more than
+	// one test run with this key (within 72 hours of the first occurence).
+	IdempotencyKey string
 	// TestFilter filters out a subset of the tests and skips the remaining ones.
 	TestFilter *regexp.Regexp
 }

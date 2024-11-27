@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -205,6 +207,25 @@ func (b *BadgerStorage) UpdateTestSuiteRun(ctx context.Context, tsr model.TestSu
 	return err
 }
 
+func (b *BadgerStorage) LoadTestSuiteRunByKey(
+	ctx context.Context,
+	key string,
+) (model.TestSuiteRun, error) {
+	parts := strings.Split(key, "-")
+
+	if len(parts) < 3 {
+		return model.TestSuiteRun{}, fmt.Errorf("invalid testsuite run key: %s", key)
+	}
+
+	suiteName := strings.Join(parts[1:len(parts)-1], "-")
+	runID, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		return model.TestSuiteRun{}, fmt.Errorf("id part of the key %s it not an int", key)
+	}
+
+	return b.LoadTestSuiteRun(ctx, suiteName, runID)
+}
+
 func (b *BadgerStorage) LoadTestSuiteRun(ctx context.Context, suiteName string, runID int) (model.TestSuiteRun, error) {
 	var tsr model.TestSuiteRun
 
@@ -344,4 +365,62 @@ func (b *BadgerStorage) DeleteScheduledRun(ctx context.Context, name string) err
 	}
 
 	return nil
+}
+
+func idempotencyKey(key string) []byte {
+	return []byte("idempotent-" + key)
+}
+
+func (b *BadgerStorage) InsertIdempotencyKey(ctx context.Context, key string) (string, error) {
+	tsrID := ""
+
+	getTsrId := func(entry *badger.Item) error {
+		_ = entry.Value(func(val []byte) error {
+			tsrID = string(val)
+			return nil
+		})
+		return model.DuplicateError{}
+	}
+
+	k := idempotencyKey(key)
+
+	err := b.runTx(ctx, true, func(t *badger.Txn) error {
+
+		entry, err := t.Get(k)
+
+		if err == badger.ErrKeyNotFound {
+			return t.Set(k, nil)
+		} else if err != nil {
+			return err
+		} else {
+			return getTsrId(entry)
+		}
+	})
+
+	if err == badger.ErrConflict {
+		// try once more to get the value
+		err = b.runTx(ctx, false, func(t *badger.Txn) error {
+			if entry, err := t.Get(k); err == nil {
+				return getTsrId(entry)
+			} else {
+				return err
+			}
+		})
+	}
+
+	return tsrID, err
+}
+
+func (b *BadgerStorage) UpdateIdempotencyKey(
+	ctx context.Context,
+	key string,
+	suiteName string,
+	id int,
+) error {
+	runKey := testSuiteRunKey(suiteName, id)
+	k := idempotencyKey(key)
+
+	return b.runTx(ctx, true, func(t *badger.Txn) error {
+		return t.SetEntry(badger.NewEntry(k, runKey).WithTTL(72 * time.Hour))
+	})
 }
