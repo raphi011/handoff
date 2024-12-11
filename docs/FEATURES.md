@@ -94,9 +94,13 @@ Allow running handoff as a cli tool in headless mode (without the web server) to
 
 A test can automatically fetch pprof profiles (go only) from the SUT while the test is running and them for later inspection.
 
-### Test Timeouts
+### Test Timeouts / Test cancellation
 
-Opt-in test timeouts through t.Context and / or providing wrapped handoff functions (e.g. http clients) to be used in tests  that implement test timeouts
+Opt-in test timeouts through t.Context and / or providing wrapped handoff functions (e.g. http clients) to be used in tests that implement test timeouts.
+
+Cancellation needs to be cooperative, similar to [kotlin coroutines](https://kotlinlang.org/docs/cancellation-and-timeouts.html#cancellation-is-cooperative).
+
+Allow users to manually cancel tests.
 
 ### Test Labels
 
@@ -139,13 +143,26 @@ Service dashboards that show information of services k8s resources running in a 
 
 It should be possible to run external tests, e.g. java tests via the junit test runner CLI command and persist the results in handoff. It's unclear which features of handoff we can support in this mode.
 
+### Display average test run duration
+
+Calculate averages on how long individual test runs took in the past and display that in the UI, either as a duration string ("this test typically takes "4-6 seconds") or as a progress bar.
+
 ### K8s CRDs
 
 Configure Test Schedules (and maybe other things) through k8s CRDs.
 
-## Dumping ground for other ideas
+### Automatic test retries
 
-- [ ] (Feature) Output go test json report
-- [ ] (Feature) Automatic test run retries/backoff on failures
-- [ ] (Technical) Run tests in parallel
-- [ ] (Technical) Index data (e.g. with github.com/blevesearch/bleve) to be able to query test results.
+Automatic test run retries/backoff on failures.
+
+### Parallel test runs
+
+Configurable parallel test runs within a test suite run.
+
+### Query engine
+
+Searchable test runs
+
+### Aggregation Frontend
+
+Separate server that serves a frontend that can aggregate results from multiple instances of handoff (dev, staging, production).
