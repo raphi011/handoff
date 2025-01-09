@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	// "github.com/raphi011/handoff/internal/hook"
+	"github.com/raphi011/handoff/internal/hook"
 	"github.com/raphi011/handoff/internal/model"
 )
 
@@ -68,9 +69,11 @@ func newHookManager(hookCallback asyncHookCallback, log *slog.Logger) *hookManag
 	}
 }
 
-func (s *hookManager) init() error {
-	// for testing purposes
-	// s.all = append(s.all, hook.NewSlackHook("", "", s.log))
+// TODO: do not pass slack specific stuff here. THis is only for testing purposes
+func (s *hookManager) init(channelID, slackToken string) error {
+	if slackToken != "" && channelID != "" {
+		s.all = append(s.all, hook.NewSlackHook(channelID, slackToken, s.log))
+	}
 
 	for _, p := range s.all {
 		if err := p.Init(); err != nil {

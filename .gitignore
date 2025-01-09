@@ -2,10 +2,11 @@ __debug_bin
 example
 .DS_STORE
 
-./example-server-bootstrap
+/example-server-bootstrap
 example
 
 handoff.db
+.env
 
 # tmux startup script
 sup.sh
