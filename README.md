@@ -126,10 +126,6 @@ Once handoff is green in the dashboard you should be able to open up the ui here
 
 See [here](./docs/FEATURES.md).
 
-## Open questions
-
-* How to add test timeouts (it's impossible to externally stop goroutines running user provided functions)?
-
 ## Non goals
 
 * Implement a new assertion library. We aim to be compatible with existing ones.
