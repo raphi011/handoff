@@ -3,7 +3,7 @@ module github.com/raphi011/handoff
 go 1.23.3
 
 require (
-	github.com/a-h/templ v0.3.819
+	github.com/a-h/templ v0.3.833
 	github.com/alexflint/go-arg v1.5.1
 	github.com/dgraph-io/badger/v4 v4.4.0
 	github.com/elastic/go-elasticsearch/v8 v8.16.0
