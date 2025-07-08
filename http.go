@@ -203,7 +203,7 @@ func filterParam(ts model.TestSuite, r *http.Request) (*regexp.Regexp, error) {
 	return filterRegex, nil
 }
 
-func (s *Server) getTestSuites(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (s *Server) getTestSuites(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	testSuites := make([]model.TestSuite, len(s.readOnlyTestSuites))
 
 	i := 0
@@ -291,8 +291,8 @@ func (s *Server) writeResponse(w http.ResponseWriter, r *http.Request, status in
 		case []model.TestSuiteRun:
 			var buf bytes.Buffer
 			if err := goldmark.Convert([]byte(`# Header
-           *bold* **italic**
-            `), &buf); err != nil {
+			        *bold* **italic**
+			         `), &buf); err != nil {
 				panic(err)
 			}
 

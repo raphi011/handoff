@@ -6,19 +6,11 @@ import (
 )
 
 templ SuiteRuns(description string, runs []model.TestSuiteRun) {
-	<main class="lg:pl-72">
-		<header class="flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-			<h1 class="text-base/7 font-semibold text-gray-900">Suite Runs</h1>
-		</header>
-		<p>
-			@templ.Raw(description)
-		</p>
-		<ul>
-			for _, tsr := range runs {
-				<li>
-					<a href={ templ.URL(fmt.Sprintf("/suites/%s/runs/%d", tsr.SuiteName, tsr.ID)) }>{ tsr.SuiteName } (#{ fmt.Sprintf("%d", tsr.ID) }): { string(tsr.Result) }</a>
-				</li>
-			}
-		</ul>
-	</main>
+	<ul>
+		for _, tsr := range runs {
+			<li>
+				<a href={ templ.URL(fmt.Sprintf("/suites/%s/runs/%d", tsr.SuiteName, tsr.ID)) }>{ tsr.SuiteName } (#{ fmt.Sprintf("%d", tsr.ID) }): { string(tsr.Result) }</a>
+			</li>
+		}
+	</ul>
 }

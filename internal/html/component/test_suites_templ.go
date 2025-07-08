@@ -34,7 +34,7 @@ func TestSuites(suites []model.TestSuite) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<main class=\"lg:pl-72\"><header class=\"flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8\"><h1 class=\"text-base/7 font-semibold text-gray-900\">Test Suites</h1></header><ul role=\"list\" class=\"divide-y divide-gray/5 border-t border-b\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8\"><h1 class=\"text-base/7 font-semibold text-gray-900\">Test Suites</h1></header><ul role=\"list\" class=\"divide-y divide-gray/5 border-t border-b\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -55,7 +55,7 @@ func TestSuites(suites []model.TestSuite) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(suite.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites.templ`, Line: 25, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites.templ`, Line: 24, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -68,7 +68,7 @@ func TestSuites(suites []model.TestSuite) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d tests in suite", len(suite.Tests)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites.templ`, Line: 31, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/html/component/test_suites.templ`, Line: 30, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -79,7 +79,7 @@ func TestSuites(suites []model.TestSuite) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</ul></main><aside class=\"bg-white lg:fixed lg:bottom-0 lg:right-0 lg:top-0 lg:w-2/6 lg:overflow-y-auto lg:border-l lg:border-gray/5\"><header class=\"flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8\"><h2 class=\"text-base/7 font-semibold text-gray-900\">Runs</h2><a href=\"#\" class=\"text-sm/6 font-semibold text-indigo-400\">View all</a></header><div class=\"divide-y divide-white/5 border-t p-5\"><!-- @SuiteActivity() --></div></aside>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</ul><aside class=\"bg-white lg:fixed lg:bottom-0 lg:right-0 lg:top-0 lg:w-2/6 lg:overflow-y-auto lg:border-l lg:border-gray/5\"><header class=\"flex items-center justify-between border-b border-white/5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8\"><h2 class=\"text-base/7 font-semibold text-gray-900\">Runs</h2><a href=\"#\" class=\"text-sm/6 font-semibold text-indigo-400\">View all</a></header><div class=\"divide-y divide-white/5 border-t p-5\"><!-- @SuiteActivity() --></div></aside>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
